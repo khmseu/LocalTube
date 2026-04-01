@@ -784,7 +784,7 @@ describe('phase 3 media APIs', () => {
         headers: { range },
         remoteAddress: '127.0.0.1'
       });
-      expect(response.statusCode).toBe(416, `Expected range '${range}' to be rejected with 416`);
+      expect(response.statusCode).toBe(416);
     }
   });
 });
