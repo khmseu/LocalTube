@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,29 +29,14 @@ const setVersion = async (packageJsonPath, version) => {
       "utf8",
     );
     console.log(`Updated ${packageJsonPath} to version ${version}`);
-  } else {
-    console.log(`${packageJsonPath} already at version ${version}`);
   }
 };
 
 const run = async () => {
   const version = getLatestTag();
-  const rootPkg = join(repoRoot, "package.json");
+  const packageJsonPath = join(process.cwd(), "package.json");
 
-  await setVersion(rootPkg, version);
-
-  const appsDir = join(repoRoot, "apps");
-  const apps = await readdir(appsDir, { withFileTypes: true });
-
-  for (const app of apps) {
-    if (!app.isDirectory()) continue;
-    const pkgPath = join(appsDir, app.name, "package.json");
-    try {
-      await setVersion(pkgPath, version);
-    } catch (err) {
-      console.warn(`Skipping ${pkgPath}: ${err.message}`);
-    }
-  }
+  await setVersion(packageJsonPath, version);
 };
 
 run().catch((error) => {

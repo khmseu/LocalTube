@@ -11,13 +11,14 @@
   ],
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
-    "dev": "npm run --workspaces --if-present dev",
+    "dev": "echo 'Run dev servers separately: npm run dev:backend and npm run dev:frontend'",
+    "dev:backend": "npm --workspace @localtube/backend run dev",
+    "dev:frontend": "npm --workspace @localtube/frontend run dev",
     "build": "npm run sync-version && npm run --workspaces --if-present build",
-    "lint": "trunk check -ay --ignore 'plans/**'",
-    "start": "npm run build && node scripts/start-all.mjs",
-    "start:all": "node scripts/start-all.mjs",
+    "lint": "trunk check -ay --ignore \"plans/**\"",
+    "start": "npm run build && npm run start:all",
+    "start:all": "npm --workspace @localtube/backend run start:run",
     "start:backend": "npm --workspace @localtube/backend run start",
-    "start:frontend": "npm --workspace @localtube/frontend run preview",
     "test": "npm run --workspaces --if-present test",
     "typecheck": "npm run --workspaces --if-present typecheck"
   }

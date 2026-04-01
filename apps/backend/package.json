@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "node ../../scripts/sync-version.mjs && tsc -p tsconfig.json",
+    "start:run": "LOCALTUBE_VIDEO_ROOT=${LOCALTUBE_VIDEO_ROOT:-./videos} node dist/src/index.js",
     "start": "npm run build && LOCALTUBE_VIDEO_ROOT=${LOCALTUBE_VIDEO_ROOT:-./videos} node dist/src/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"

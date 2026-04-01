@@ -38,10 +38,16 @@ export LOCALTUBE_THUMBNAIL_CACHE_DIR="/absolute/path/to/.localtube-thumbnails"
 
 ## Development
 
-Run both workspace dev scripts:
+Run backend dev server:
 
 ```bash
-npm run dev
+npm run dev:backend
+```
+
+Run frontend dev server (separate terminal):
+
+```bash
+npm run dev:frontend
 ```
 
 Default app URLs:
@@ -57,13 +63,15 @@ Build all workspaces:
 npm run build
 ```
 
-Run full production preview (backend + frontend):
+Run production mode (backend serves frontend build):
 
 ```bash
 npm run start
 ```
 
-This prints the URLs at startup. Open your browser at **<http://127.0.0.1:4173>**.
+The backend serves the built frontend assets in production mode.
+Open your browser at **<http://127.0.0.1:3000>**.
+Use Ctrl+C to stop the service.
 
 Run only backend production server:
 

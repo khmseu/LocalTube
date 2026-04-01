@@ -1,8 +1,9 @@
 import Fastify from "fastify";
+import type { FastifyReply } from "fastify";
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { access, mkdir, stat } from "node:fs/promises";
+import { extname, join, resolve } from "node:path";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 import { openDatabase, type ResumeRow, type VideoRow } from "./db.js";
@@ -58,6 +59,7 @@ type BuildServerOptions = {
   videoRootDir?: string;
   sqlitePath?: string;
   thumbnailCacheDir?: string;
+  frontendDistDir?: string;
   runMediaCommand?: MediaCommandRunner;
 };
 
@@ -170,6 +172,44 @@ const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
   }
 
   return join(process.cwd(), ".localtube-thumbnails");
+};
+
+const getFrontendDistDir = (frontendDistDir?: string) => {
+  if (frontendDistDir) {
+    return frontendDistDir;
+  }
+
+  if (process.env.LOCALTUBE_FRONTEND_DIST_DIR) {
+    return process.env.LOCALTUBE_FRONTEND_DIST_DIR;
+  }
+
+  // Backend process runs from apps/backend by default.
+  return resolve(process.cwd(), "../frontend/dist");
+};
+
+const getContentType = (path: string) => {
+  const extension = extname(path).toLowerCase();
+  switch (extension) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".js":
+      return "text/javascript; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".ico":
+      return "image/x-icon";
+    default:
+      return "application/octet-stream";
+  }
 };
 
 const defaultMediaCommandRunner: MediaCommandRunner = async (command, args) => {
@@ -464,6 +504,9 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   const db = openDatabase(getDatabasePath(options.sqlitePath));
   const videoRootDir = getVideoRootDir(options.videoRootDir);
   const thumbnailCacheDir = getThumbnailCacheDir(options.thumbnailCacheDir);
+  const frontendDistDir = getFrontendDistDir(options.frontendDistDir);
+  const frontendRoot = resolve(frontendDistDir);
+  const frontendIndexPath = join(frontendRoot, "index.html");
   const runMediaCommand = options.runMediaCommand ?? defaultMediaCommandRunner;
   const mutatingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -749,6 +792,53 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       reply.header("content-type", "image/jpeg");
       return reply.send(createReadStream(thumbnailPath));
     }
+  });
+
+  const sendFrontendFile = async (requestPath: string, reply: FastifyReply) => {
+    const normalized = requestPath.replace(/^\/+/, "");
+    const requestedPath = normalized.length > 0 ? normalized : "index.html";
+    const absolutePath = resolve(frontendRoot, requestedPath);
+    const isUnderFrontendRoot =
+      absolutePath === frontendRoot || absolutePath.startsWith(`${frontendRoot}/`);
+
+    if (!isUnderFrontendRoot) {
+      return reply.code(403).send({ error: "Forbidden" });
+    }
+
+    try {
+      const fileInfo = await stat(absolutePath);
+      if (!fileInfo.isFile()) {
+        throw new Error("not-a-file");
+      }
+
+      reply.header("content-type", getContentType(absolutePath));
+      return reply.send(createReadStream(absolutePath));
+    } catch {
+      const indexInfo = await stat(frontendIndexPath);
+      if (!indexInfo.isFile()) {
+        return reply
+          .code(503)
+          .send({ error: "Frontend build is unavailable. Run npm run build first." });
+      }
+
+      reply.header("content-type", "text/html; charset=utf-8");
+      return reply.send(createReadStream(frontendIndexPath));
+    }
+  };
+
+  app.get("/", async (_request, reply) => {
+    return sendFrontendFile("index.html", reply);
+  });
+
+  app.get("/*", async (request, reply) => {
+    const params = request.params as { "*"?: string };
+    const path = params["*"] ?? "";
+
+    if (path.startsWith("api/")) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+
+    return sendFrontendFile(path, reply);
   });
 
   return app;
