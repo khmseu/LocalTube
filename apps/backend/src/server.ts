@@ -456,9 +456,14 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     const method = request.method.toUpperCase();
     if (mutatingMethods.has(method)) {
       const originHeader = request.headers.origin;
-      if (typeof originHeader !== 'string' || !isAllowedOrigin(originHeader)) {
-        await reply.code(403).send({ error: 'Origin not allowed' });
-        return;
+      if (typeof originHeader === 'string') {
+        if (!isAllowedOrigin(originHeader)) {
+          await reply.code(403).send({ error: 'Origin not allowed' });
+          return;
+        }
+      } else {
+        // Allow non-browser clients (e.g., curl) on loopback for mutating endpoints.
+        // Keep host authorization and loopback checks in place.
       }
     }
   });

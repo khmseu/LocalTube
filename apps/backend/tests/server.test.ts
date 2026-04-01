@@ -115,7 +115,7 @@ describe('backend localhost-only behavior', () => {
       url: '/api/index/rescan',
       remoteAddress: '127.0.0.1'
     });
-    expect(missingOriginResponse.statusCode).toBe(403);
+    expect(missingOriginResponse.statusCode).toBe(200);
 
     const blockedResponse = await app.inject({
       method: 'POST',
