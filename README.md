@@ -63,6 +63,8 @@ Run backend production server (compiled output):
 npm run start
 ```
 
+Once started, open your browser at **http://localhost:3000**.
+
 Preview frontend production build on loopback:
 
 ```bash

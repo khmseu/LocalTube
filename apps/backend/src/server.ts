@@ -686,5 +686,6 @@ export const buildServer = (options: BuildServerOptions = {}) => {
 
 export const startServer = async (app = buildServer(), port = 3000) => {
   await app.listen({ port, host: '127.0.0.1' });
+  console.log(`LocalTube running → http://localhost:${port}`);
   return app;
 };
