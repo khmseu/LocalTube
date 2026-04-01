@@ -1,7 +1,7 @@
 {
   "name": "localtube",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -10,8 +10,9 @@
     "apps/*"
   ],
   "scripts": {
+    "sync-version": "node scripts/sync-version.mjs",
     "dev": "npm run --workspaces --if-present dev",
-    "build": "npm run --workspaces --if-present build",
+    "build": "npm run sync-version && npm run --workspaces --if-present build",
     "start": "npm run build && node scripts/start-all.mjs",
     "start:all": "node scripts/start-all.mjs",
     "start:backend": "npm --workspace @localtube/backend run start",

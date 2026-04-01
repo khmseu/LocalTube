@@ -1,11 +1,11 @@
 {
   "name": "@localtube/backend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "node ../../scripts/sync-version.mjs && tsc -p tsconfig.json",
     "start": "npm run build && LOCALTUBE_VIDEO_ROOT=${LOCALTUBE_VIDEO_ROOT:-./videos} node dist/src/index.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
