@@ -1,3 +1,4 @@
-import { startServer } from './server.js';
+import { buildServer, startServer, validateServerConfig } from './server.js';
 
-await startServer();
+const { videoRootDir } = validateServerConfig();
+await startServer(buildServer({ videoRootDir }));

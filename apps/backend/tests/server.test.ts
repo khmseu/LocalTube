@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { openDatabase } from '../src/db.js';
-import { buildServer, startServer } from '../src/server.js';
+import { buildServer, startServer, validateServerConfig } from '../src/server.js';
 
 beforeAll(() => {
   // Increase timeout for Phase 3 tests with media command execution
@@ -13,6 +13,7 @@ beforeAll(() => {
 const startedServers: Array<{ close: () => Promise<void> }> = [];
 const tempDirs: string[] = [];
 const mediaCommandCalls: string[] = [];
+const localOriginHeader = { origin: 'http://localhost:5173' };
 
 const createVideoRoot = async () => {
   const dir = await mkdtemp(join(tmpdir(), 'localtube-videos-'));
@@ -72,6 +73,77 @@ describe('backend localhost-only behavior', () => {
 
     expect(response.statusCode).toBe(403);
   });
+
+  it('host header validation', async () => {
+    const rootDir = await createVideoRoot();
+    const app = buildServer({ sqlitePath: join(rootDir, 'catalog.db') });
+
+    const blockedResponse = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: {
+        host: 'evil.example.com'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(blockedResponse.statusCode).toBe(403);
+
+    const allowedResponse = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: {
+        host: 'localhost:3000'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(allowedResponse.statusCode).toBe(200);
+  });
+
+  it('origin checks for mutating endpoints', async () => {
+    const rootDir = await createVideoRoot();
+    await writeVideo(rootDir, 'watch.mp4', 'watch-me');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath: join(rootDir, 'catalog.db')
+    });
+
+    const missingOriginResponse = await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+    expect(missingOriginResponse.statusCode).toBe(403);
+
+    const blockedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      headers: {
+        origin: 'https://evil.example.com'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+    expect(blockedResponse.statusCode).toBe(403);
+
+    const allowedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      headers: {
+        origin: 'http://localhost:5173'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(allowedResponse.statusCode).toBe(200);
+  });
+
+  it('config validation rejects missing video dir', () => {
+    expect(() => validateServerConfig({})).toThrowError(
+      'LOCALTUBE_VIDEO_ROOT must be configured before startup'
+    );
+  });
 });
 
 describe('phase 2 indexing and catalog APIs', () => {
@@ -89,6 +161,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const indexResponse = await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
     expect(indexResponse.statusCode).toBe(200);
@@ -121,6 +194,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -130,6 +204,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const secondScan = await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -160,6 +235,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -173,6 +249,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const putFirst = await app.inject({
       method: 'PUT',
       url: `/api/videos/${videoId}/resume`,
+      headers: localOriginHeader,
       payload: { positionSeconds: 42 },
       remoteAddress: '127.0.0.1'
     });
@@ -181,6 +258,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const putSecond = await app.inject({
       method: 'PUT',
       url: `/api/videos/${videoId}/resume`,
+      headers: localOriginHeader,
       payload: { positionSeconds: 84 },
       remoteAddress: '127.0.0.1'
     });
@@ -208,6 +286,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -221,6 +300,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const nanResponse = await app.inject({
       method: 'PUT',
       url: `/api/videos/${videoId}/resume`,
+      headers: localOriginHeader,
       payload: { positionSeconds: Number.NaN },
       remoteAddress: '127.0.0.1'
     });
@@ -234,6 +314,7 @@ describe('phase 2 indexing and catalog APIs', () => {
       url: `/api/videos/${videoId}/resume`,
       payload: '{"positionSeconds":1e9999}',
       headers: {
+        ...localOriginHeader,
         'content-type': 'application/json'
       },
       remoteAddress: '127.0.0.1'
@@ -255,6 +336,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -280,6 +362,7 @@ describe('phase 2 indexing and catalog APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -323,6 +406,7 @@ describe('phase 3 media APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -360,6 +444,7 @@ describe('phase 3 media APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -425,6 +510,7 @@ describe('phase 3 media APIs', () => {
     const rescanResponse = await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
     expect(rescanResponse.statusCode).toBe(200);
@@ -497,6 +583,7 @@ describe('phase 3 media APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -567,6 +654,7 @@ describe('phase 3 media APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -620,6 +708,7 @@ describe('phase 3 media APIs', () => {
     const rescanResponse = await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 
@@ -671,6 +760,7 @@ describe('phase 3 media APIs', () => {
     await app.inject({
       method: 'POST',
       url: '/api/index/rescan',
+      headers: localOriginHeader,
       remoteAddress: '127.0.0.1'
     });
 

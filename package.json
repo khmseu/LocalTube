@@ -12,6 +12,9 @@
   "scripts": {
     "dev": "npm run --workspaces --if-present dev",
     "build": "npm run --workspaces --if-present build",
+    "start": "npm run start:backend",
+    "start:backend": "npm --workspace @localtube/backend run start",
+    "start:frontend": "npm --workspace @localtube/frontend run preview",
     "test": "npm run --workspaces --if-present test",
     "typecheck": "npm run --workspaces --if-present typecheck"
   }

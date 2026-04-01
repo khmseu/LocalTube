@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { access, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { URL } from 'node:url';
 import type Database from 'better-sqlite3';
 import { openDatabase, type ResumeRow, type VideoRow } from './db.js';
 import { scanVideoDirectory } from './video-indexer.js';
@@ -15,11 +16,51 @@ const isLoopbackAddress = (address: string) => {
   );
 };
 
+const isAllowedHostname = (hostname: string) => {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+};
+
+const parseHostHeaderHostname = (hostHeader: string) => {
+  const host = hostHeader.split(',', 1)[0]?.trim().toLowerCase() ?? '';
+  if (host.length === 0) {
+    return '';
+  }
+
+  if (host.startsWith('[')) {
+    const endBracketIndex = host.indexOf(']');
+    if (endBracketIndex === -1) {
+      return '';
+    }
+
+    return host.slice(1, endBracketIndex);
+  }
+
+  return host.split(':', 1)[0] ?? '';
+};
+
+const isAllowedHostHeader = (hostHeader: string) => {
+  const hostname = parseHostHeaderHostname(hostHeader);
+  return isAllowedHostname(hostname);
+};
+
+const isAllowedOrigin = (originHeader: string) => {
+  try {
+    const origin = new URL(originHeader);
+    return isAllowedHostname(origin.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 type BuildServerOptions = {
   videoRootDir?: string;
   sqlitePath?: string;
   thumbnailCacheDir?: string;
   runMediaCommand?: MediaCommandRunner;
+};
+
+type ConfigValidationOptions = {
+  videoRootDir?: string;
 };
 
 type MediaCommandResult = {
@@ -101,6 +142,17 @@ const getDatabasePath = (sqlitePath?: string) => {
 
 const getVideoRootDir = (videoRootDir?: string) => {
   return videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
+};
+
+export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
+  const videoRootDir = getVideoRootDir(options.videoRootDir);
+  if (!videoRootDir || videoRootDir.trim().length === 0) {
+    throw new Error('LOCALTUBE_VIDEO_ROOT must be configured before startup');
+  }
+
+  return {
+    videoRootDir
+  };
 };
 
 const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
@@ -387,10 +439,27 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   const videoRootDir = getVideoRootDir(options.videoRootDir);
   const thumbnailCacheDir = getThumbnailCacheDir(options.thumbnailCacheDir);
   const runMediaCommand = options.runMediaCommand ?? defaultMediaCommandRunner;
+  const mutatingMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
   app.addHook('onRequest', async (request, reply) => {
     if (!isLoopbackAddress(request.ip)) {
       await reply.code(403).send({ error: 'Loopback access only' });
+      return;
+    }
+
+    const hostHeader = request.headers.host;
+    if (typeof hostHeader !== 'string' || !isAllowedHostHeader(hostHeader)) {
+      await reply.code(403).send({ error: 'Invalid host header' });
+      return;
+    }
+
+    const method = request.method.toUpperCase();
+    if (mutatingMethods.has(method)) {
+      const originHeader = request.headers.origin;
+      if (typeof originHeader !== 'string' || !isAllowedOrigin(originHeader)) {
+        await reply.code(403).send({ error: 'Origin not allowed' });
+        return;
+      }
     }
   });
 
