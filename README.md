@@ -57,15 +57,21 @@ Build all workspaces:
 npm run build
 ```
 
-Run backend production server (compiled output):
+Run full production preview (backend + frontend):
 
 ```bash
 npm run start
 ```
 
-Once started, open your browser at **http://localhost:3000**.
+This prints the URLs at startup. Open your browser at **http://127.0.0.1:4173**.
 
-Preview frontend production build on loopback:
+Run only backend production server:
+
+```bash
+npm run start:backend
+```
+
+Run only frontend production preview:
 
 ```bash
 npm run start:frontend
