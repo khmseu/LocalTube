@@ -81,8 +81,12 @@ const formatDuration = (seconds: number | null): string => {
     return "Unknown length";
   }
   const rounded = Math.floor(seconds);
-  const mins = Math.floor(rounded / 60);
+  const hrs = Math.floor(rounded / 3600);
+  const mins = Math.floor((rounded % 3600) / 60);
   const secs = rounded % 60;
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
@@ -292,8 +296,12 @@ const App = () => {
                           alt=""
                           loading="lazy"
                         />
-                        <h2>{video.title}</h2>
-                        <p>{formatDuration(video.durationSeconds)}</p>
+                        <div className="video-copy">
+                          <h2 className="video-title" title={video.title}>
+                            {video.title}
+                          </h2>
+                          <p>{formatDuration(video.durationSeconds)}</p>
+                        </div>
                       </button>
                     </li>
                   ))}

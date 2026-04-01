@@ -107,6 +107,9 @@ main {
 }
 
 .video-link {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   width: 100%;
   border: 0;
   background: transparent;
@@ -124,15 +127,28 @@ main {
   background: #ece8dd;
 }
 
-.video-link h2 {
+.video-copy {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem 0.75rem 0.9rem;
+}
+
+.video-title {
   font-size: 1rem;
   line-height: 1.3;
-  margin: 0.75rem 0.75rem 0.2rem;
+  margin: 0;
+  min-height: calc(1em * 1.3 * 3);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .video-link p {
-  margin: 0 0.75rem 0.9rem;
+  margin: 0;
   color: #5f615f;
+  text-align: right;
 }
 
 .pagination {

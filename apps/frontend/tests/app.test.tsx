@@ -1,4 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import App from "../src/App";
 
 type MockResponseInit = {
@@ -18,6 +20,78 @@ describe("phase 4 frontend integration", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
     vi.restoreAllMocks();
+  });
+
+  it("browse cards use a fixed title block for consistent heights", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 12,
+          total: 2,
+          items: [
+            {
+              id: "video-short",
+              title: "Short title",
+              path: "short.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 75,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+            {
+              id: "video-long",
+              title:
+                "A much longer title that would otherwise stretch this card and make the grid jump between pages",
+              path: "long.mp4",
+              sizeBytes: 200,
+              mtimeMs: 2,
+              durationSeconds: 130,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const shortTitle = await screen.findByRole("heading", {
+      name: "Short title",
+    });
+    const longTitle = screen.getByRole("heading", {
+      name:
+        "A much longer title that would otherwise stretch this card and make the grid jump between pages",
+    });
+
+    expect(shortTitle).toHaveClass("video-title");
+    expect(longTitle).toHaveClass("video-title");
+    expect(shortTitle).toHaveAttribute("title", "Short title");
+    expect(longTitle).toHaveAttribute(
+      "title",
+      "A much longer title that would otherwise stretch this card and make the grid jump between pages",
+    );
+    expect(shortTitle.closest(".video-copy")).not.toBeNull();
+    expect(longTitle.closest(".video-copy")).not.toBeNull();
+
+    const appCss = readFileSync(resolve(process.cwd(), "src/App.css"), "utf8");
+    expect(appCss).toContain(".video-title {");
+    expect(appCss).toContain("min-height: calc(1em * 1.3 * 3);");
+    expect(appCss).toContain("-webkit-line-clamp: 3;");
   });
 
   it("browse grid renders paged videos", async () => {
