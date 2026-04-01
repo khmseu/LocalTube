@@ -13,6 +13,7 @@
     "sync-version": "node scripts/sync-version.mjs",
     "dev": "npm run --workspaces --if-present dev",
     "build": "npm run sync-version && npm run --workspaces --if-present build",
+    "lint": "trunk check -ay --ignore 'plans/**'",
     "start": "npm run build && node scripts/start-all.mjs",
     "start:all": "node scripts/start-all.mjs",
     "start:backend": "npm --workspace @localtube/backend run start",

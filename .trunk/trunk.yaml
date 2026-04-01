@@ -25,7 +25,7 @@ lint:
     - prettier@3.8.1
     - trufflehog@3.94.2
   ignore:
-    - linters: [markdownlint]
+    - linters: [ALL]
       paths:
         - plans/**
 actions:

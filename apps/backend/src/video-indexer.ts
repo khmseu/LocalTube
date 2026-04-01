@@ -1,18 +1,18 @@
-import { createHash } from 'node:crypto';
-import { readdir, stat } from 'node:fs/promises';
-import { extname, join, parse, relative } from 'node:path';
+import { createHash } from "node:crypto";
+import { readdir, stat } from "node:fs/promises";
+import { extname, join, parse, relative } from "node:path";
 
 const VIDEO_EXTENSIONS = new Set([
-  '.mp4',
-  '.mkv',
-  '.webm',
-  '.mov',
-  '.avi',
-  '.m4v',
-  '.wmv',
-  '.flv',
-  '.mpg',
-  '.mpeg'
+  ".mp4",
+  ".mkv",
+  ".webm",
+  ".mov",
+  ".avi",
+  ".m4v",
+  ".wmv",
+  ".flv",
+  ".mpg",
+  ".mpeg",
 ]);
 
 export type DiscoveredVideo = {
@@ -23,13 +23,17 @@ export type DiscoveredVideo = {
   sizeBytes: number;
 };
 
-const toPosixPath = (value: string) => value.split('\\').join('/');
+const toPosixPath = (value: string) => value.split("\\").join("/");
 
 const stableVideoId = (relativePath: string) => {
-  return createHash('sha256').update(relativePath).digest('hex');
+  return createHash("sha256").update(relativePath).digest("hex");
 };
 
-const walk = async (rootDir: string, currentDir: string, acc: DiscoveredVideo[]) => {
+const walk = async (
+  rootDir: string,
+  currentDir: string,
+  acc: DiscoveredVideo[],
+) => {
   const entries = await readdir(currentDir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -57,7 +61,7 @@ const walk = async (rootDir: string, currentDir: string, acc: DiscoveredVideo[])
       relativePath,
       title: parse(entry.name).name,
       mtimeMs: Math.trunc(fileStats.mtimeMs),
-      sizeBytes: fileStats.size
+      sizeBytes: fileStats.size,
     });
   }
 };

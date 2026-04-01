@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import './App.css';
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import "./App.css";
 
 type VideoItem = {
   id: string;
@@ -24,14 +24,14 @@ type ResumeResponse = {
 };
 
 type BrowseRoute = {
-  kind: 'browse';
+  kind: "browse";
   page: number;
   pageSize: number;
   q: string;
 };
 
 type WatchRoute = {
-  kind: 'watch';
+  kind: "watch";
   id: string;
 };
 
@@ -52,45 +52,45 @@ const readPositiveNumber = (value: string | null, fallback: number): number => {
 
 const getRouteFromLocation = (): AppRoute => {
   const path = window.location.pathname;
-  if (path.startsWith('/watch/')) {
-    const id = decodeURIComponent(path.replace('/watch/', '').trim());
+  if (path.startsWith("/watch/")) {
+    const id = decodeURIComponent(path.replace("/watch/", "").trim());
     if (id.length > 0) {
-      return { kind: 'watch', id };
+      return { kind: "watch", id };
     }
   }
 
   const params = new URLSearchParams(window.location.search);
   return {
-    kind: 'browse',
-    page: readPositiveNumber(params.get('page'), 1),
-    pageSize: readPositiveNumber(params.get('pageSize'), DEFAULT_PAGE_SIZE),
-    q: params.get('q')?.trim() ?? ''
+    kind: "browse",
+    page: readPositiveNumber(params.get("page"), 1),
+    pageSize: readPositiveNumber(params.get("pageSize"), DEFAULT_PAGE_SIZE),
+    q: params.get("q")?.trim() ?? "",
   };
 };
 
 const toBrowsePath = (page: number, pageSize: number, q: string): string => {
   const params = new URLSearchParams();
-  params.set('page', String(page));
-  params.set('pageSize', String(pageSize));
-  params.set('q', q);
+  params.set("page", String(page));
+  params.set("pageSize", String(pageSize));
+  params.set("q", q);
   return `/?${params.toString()}`;
 };
 
 const formatDuration = (seconds: number | null): string => {
   if (!seconds || !Number.isFinite(seconds) || seconds <= 0) {
-    return 'Unknown length';
+    return "Unknown length";
   }
   const rounded = Math.floor(seconds);
   const mins = Math.floor(rounded / 60);
   const secs = rounded % 60;
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
 const App = () => {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromLocation());
   const [browse, setBrowse] = useState<VideoListResponse | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState('');
+  const [searchInput, setSearchInput] = useState("");
 
   const [watchVideo, setWatchVideo] = useState<VideoDetail | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
@@ -103,20 +103,20 @@ const App = () => {
     const onPopstate = () => {
       setRoute(getRouteFromLocation());
     };
-    window.addEventListener('popstate', onPopstate);
+    window.addEventListener("popstate", onPopstate);
     return () => {
-      window.removeEventListener('popstate', onPopstate);
+      window.removeEventListener("popstate", onPopstate);
     };
   }, []);
 
   useEffect(() => {
-    if (route.kind === 'browse') {
+    if (route.kind === "browse") {
       setSearchInput(route.q);
     }
   }, [route]);
 
   useEffect(() => {
-    if (route.kind !== 'browse') {
+    if (route.kind !== "browse") {
       return;
     }
 
@@ -124,19 +124,19 @@ const App = () => {
     const controller = new AbortController();
     const url = `/api/videos?page=${route.page}&pageSize=${route.pageSize}&q=${encodeURIComponent(route.q)}`;
 
-    fetch(url, { method: 'GET', signal: controller.signal })
+    fetch(url, { method: "GET", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error('Unable to load videos');
+          throw new Error("Unable to load videos");
         }
         const data = (await response.json()) as VideoListResponse;
         setBrowse(data);
       })
       .catch((error: unknown) => {
-        if ((error as Error).name === 'AbortError') {
+        if ((error as Error).name === "AbortError") {
           return;
         }
-        setBrowseError('Could not load video catalog.');
+        setBrowseError("Could not load video catalog.");
       });
 
     return () => {
@@ -145,7 +145,7 @@ const App = () => {
   }, [route]);
 
   useEffect(() => {
-    if (route.kind !== 'watch') {
+    if (route.kind !== "watch") {
       return;
     }
 
@@ -156,14 +156,14 @@ const App = () => {
     const loadWatchData = async () => {
       const [videoResponse, resumeResponse] = await Promise.all([
         fetch(`/api/videos/${route.id}`, { signal: controller.signal }),
-        fetch(`/api/videos/${route.id}/resume`, { signal: controller.signal })
+        fetch(`/api/videos/${route.id}/resume`, { signal: controller.signal }),
       ]);
 
       if (!videoResponse.ok) {
-        throw new Error('Unable to load video');
+        throw new Error("Unable to load video");
       }
       if (!resumeResponse.ok) {
-        throw new Error('Unable to load resume');
+        throw new Error("Unable to load resume");
       }
 
       const video = (await videoResponse.json()) as VideoDetail;
@@ -175,10 +175,10 @@ const App = () => {
     };
 
     loadWatchData().catch((error: unknown) => {
-      if ((error as Error).name === 'AbortError') {
+      if ((error as Error).name === "AbortError") {
         return;
       }
-      setWatchError('Could not load this video.');
+      setWatchError("Could not load this video.");
     });
 
     return () => {
@@ -187,7 +187,7 @@ const App = () => {
   }, [route]);
 
   useEffect(() => {
-    if (route.kind !== 'watch') {
+    if (route.kind !== "watch") {
       return;
     }
     const player = videoRef.current;
@@ -198,7 +198,7 @@ const App = () => {
   }, [route, watchVideo, resumePosition]);
 
   const navigate = (nextPath: string) => {
-    window.history.pushState({}, '', nextPath);
+    window.history.pushState({}, "", nextPath);
     setRoute(getRouteFromLocation());
   };
 
@@ -211,12 +211,13 @@ const App = () => {
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
-    const pageSize = route.kind === 'browse' ? route.pageSize : DEFAULT_PAGE_SIZE;
+    const pageSize =
+      route.kind === "browse" ? route.pageSize : DEFAULT_PAGE_SIZE;
     navigate(toBrowsePath(1, pageSize, searchInput.trim()));
   };
 
   const onTimeUpdate = () => {
-    if (route.kind !== 'watch' || !videoRef.current) {
+    if (route.kind !== "watch" || !videoRef.current) {
       return;
     }
 
@@ -231,19 +232,28 @@ const App = () => {
 
     lastSyncedSecondsRef.current = seconds;
     void fetch(`/api/videos/${route.id}/resume`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ positionSeconds: seconds })
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ positionSeconds: seconds }),
     });
   };
 
   return (
     <div className="app-shell">
       <header className="top-bar">
-        <button className="brand" type="button" onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ''))}>
+        <button
+          className="brand"
+          type="button"
+          onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ""))}
+        >
           LocalTube
         </button>
-        <form role="search" aria-label="Video search" className="search-form" onSubmit={submitSearch}>
+        <form
+          role="search"
+          aria-label="Video search"
+          className="search-form"
+          onSubmit={submitSearch}
+        >
           <label htmlFor="video-search" className="sr-only">
             Search videos
           </label>
@@ -260,7 +270,7 @@ const App = () => {
       </header>
 
       <main>
-        {route.kind === 'browse' ? (
+        {route.kind === "browse" ? (
           <section aria-label="Browse videos" className="browse-layout">
             {browseError ? <p role="alert">{browseError}</p> : null}
             {!browse ? (
@@ -273,9 +283,15 @@ const App = () => {
                       <button
                         type="button"
                         className="video-link"
-                        onClick={() => navigate(`/watch/${encodeURIComponent(video.id)}`)}
+                        onClick={() =>
+                          navigate(`/watch/${encodeURIComponent(video.id)}`)
+                        }
                       >
-                        <img src={`/api/videos/${video.id}/thumbnail`} alt="" loading="lazy" />
+                        <img
+                          src={`/api/videos/${video.id}/thumbnail`}
+                          alt=""
+                          loading="lazy"
+                        />
                         <h2>{video.title}</h2>
                         <p>{formatDuration(video.durationSeconds)}</p>
                       </button>
@@ -285,7 +301,15 @@ const App = () => {
                 <nav aria-label="Catalog pagination" className="pagination">
                   <button
                     type="button"
-                    onClick={() => navigate(toBrowsePath(Math.max(1, route.page - 1), route.pageSize, route.q))}
+                    onClick={() =>
+                      navigate(
+                        toBrowsePath(
+                          Math.max(1, route.page - 1),
+                          route.pageSize,
+                          route.q,
+                        ),
+                      )
+                    }
                     disabled={route.page <= 1}
                   >
                     Previous
@@ -295,7 +319,15 @@ const App = () => {
                   </span>
                   <button
                     type="button"
-                    onClick={() => navigate(toBrowsePath(Math.min(totalPages, route.page + 1), route.pageSize, route.q))}
+                    onClick={() =>
+                      navigate(
+                        toBrowsePath(
+                          Math.min(totalPages, route.page + 1),
+                          route.pageSize,
+                          route.q,
+                        ),
+                      )
+                    }
                     disabled={route.page >= totalPages}
                   >
                     Next
@@ -306,7 +338,11 @@ const App = () => {
           </section>
         ) : (
           <section className="watch-layout" aria-label="Watch video">
-            <button type="button" className="back-link" onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ''))}>
+            <button
+              type="button"
+              className="back-link"
+              onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ""))}
+            >
               Back to Browse
             </button>
             {watchError ? <p role="alert">{watchError}</p> : null}

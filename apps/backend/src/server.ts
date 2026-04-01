@@ -1,41 +1,43 @@
-import Fastify from 'fastify';
-import { spawn } from 'node:child_process';
-import { createReadStream } from 'node:fs';
-import { access, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { URL } from 'node:url';
-import type Database from 'better-sqlite3';
-import { openDatabase, type ResumeRow, type VideoRow } from './db.js';
-import { scanVideoDirectory } from './video-indexer.js';
+import Fastify from "fastify";
+import { spawn } from "node:child_process";
+import { createReadStream } from "node:fs";
+import { access, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { URL } from "node:url";
+import type Database from "better-sqlite3";
+import { openDatabase, type ResumeRow, type VideoRow } from "./db.js";
+import { scanVideoDirectory } from "./video-indexer.js";
 
 const isLoopbackAddress = (address: string) => {
   return (
-    address === '127.0.0.1' ||
-    address === '::1' ||
-    address === '::ffff:127.0.0.1'
+    address === "127.0.0.1" ||
+    address === "::1" ||
+    address === "::ffff:127.0.0.1"
   );
 };
 
 const isAllowedHostname = (hostname: string) => {
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
 };
 
 const parseHostHeaderHostname = (hostHeader: string) => {
-  const host = hostHeader.split(',', 1)[0]?.trim().toLowerCase() ?? '';
+  const host = hostHeader.split(",", 1)[0]?.trim().toLowerCase() ?? "";
   if (host.length === 0) {
-    return '';
+    return "";
   }
 
-  if (host.startsWith('[')) {
-    const endBracketIndex = host.indexOf(']');
+  if (host.startsWith("[")) {
+    const endBracketIndex = host.indexOf("]");
     if (endBracketIndex === -1) {
-      return '';
+      return "";
     }
 
     return host.slice(1, endBracketIndex);
   }
 
-  return host.split(':', 1)[0] ?? '';
+  return host.split(":", 1)[0] ?? "";
 };
 
 const isAllowedHostHeader = (hostHeader: string) => {
@@ -69,7 +71,10 @@ type MediaCommandResult = {
   stderr: string;
 };
 
-type MediaCommandRunner = (command: string, args: string[]) => Promise<MediaCommandResult>;
+type MediaCommandRunner = (
+  command: string,
+  args: string[],
+) => Promise<MediaCommandResult>;
 
 type VideoMetadata = {
   durationSeconds: number | null;
@@ -107,7 +112,7 @@ const rowToVideo = (row: VideoRow): VideoListItem => {
     codecName: row.codec_name,
     formatName: row.format_name,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
   };
 };
 
@@ -125,7 +130,7 @@ const parsePositiveInt = (value: string | undefined, fallback: number) => {
 };
 
 const isFiniteNonNegativeNumber = (value: unknown): value is number => {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 };
 
 const getDatabasePath = (sqlitePath?: string) => {
@@ -137,7 +142,7 @@ const getDatabasePath = (sqlitePath?: string) => {
     return process.env.LOCALTUBE_SQLITE_PATH;
   }
 
-  return join(process.cwd(), 'localtube.db');
+  return join(process.cwd(), "localtube.db");
 };
 
 const getVideoRootDir = (videoRootDir?: string) => {
@@ -147,11 +152,11 @@ const getVideoRootDir = (videoRootDir?: string) => {
 export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
   const videoRootDir = getVideoRootDir(options.videoRootDir);
   if (!videoRootDir || videoRootDir.trim().length === 0) {
-    throw new Error('LOCALTUBE_VIDEO_ROOT must be configured before startup');
+    throw new Error("LOCALTUBE_VIDEO_ROOT must be configured before startup");
   }
 
   return {
-    videoRootDir
+    videoRootDir,
   };
 };
 
@@ -164,35 +169,35 @@ const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
     return process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR;
   }
 
-  return join(process.cwd(), '.localtube-thumbnails');
+  return join(process.cwd(), ".localtube-thumbnails");
 };
 
 const defaultMediaCommandRunner: MediaCommandRunner = async (command, args) => {
   return await new Promise<MediaCommandResult>((resolve) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
     });
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
     });
 
-    child.on('error', (error) => {
+    child.on("error", (error) => {
       resolve({
         code: 127,
         stdout,
-        stderr: `${stderr}\n${error.message}`.trim()
+        stderr: `${stderr}\n${error.message}`.trim(),
       });
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
       resolve({
         code: code ?? 1,
         stdout,
-        stderr
+        stderr,
       });
     });
   });
@@ -218,25 +223,25 @@ const strictParseInt = (str: string): number | null => {
 };
 
 const parseRange = (headerValue: string, fileSize: number) => {
-  if (!headerValue.startsWith('bytes=')) {
+  if (!headerValue.startsWith("bytes=")) {
     return null;
   }
 
-  const rangeValue = headerValue.slice('bytes='.length).trim();
-  if (rangeValue.length === 0 || rangeValue.includes(',')) {
+  const rangeValue = headerValue.slice("bytes=".length).trim();
+  if (rangeValue.length === 0 || rangeValue.includes(",")) {
     return null;
   }
 
-  const [rawStart, rawEnd] = rangeValue.split('-', 2);
+  const [rawStart, rawEnd] = rangeValue.split("-", 2);
   if (rawStart === undefined || rawEnd === undefined) {
     return null;
   }
 
-  if (rawStart === '' && rawEnd === '') {
+  if (rawStart === "" && rawEnd === "") {
     return null;
   }
 
-  if (rawStart === '') {
+  if (rawStart === "") {
     const suffixLength = strictParseInt(rawEnd);
     if (suffixLength === null || suffixLength <= 0) {
       return null;
@@ -251,7 +256,7 @@ const parseRange = (headerValue: string, fileSize: number) => {
     return null;
   }
 
-  if (rawEnd === '') {
+  if (rawEnd === "") {
     return { start, end: fileSize - 1 };
   }
 
@@ -265,16 +270,16 @@ const parseRange = (headerValue: string, fileSize: number) => {
 
 const probeVideoMetadata = async (
   runMediaCommand: MediaCommandRunner,
-  absolutePath: string
+  absolutePath: string,
 ): Promise<VideoMetadata | null> => {
-  const result = await runMediaCommand('ffprobe', [
-    '-v',
-    'error',
-    '-print_format',
-    'json',
-    '-show_streams',
-    '-show_format',
-    absolutePath
+  const result = await runMediaCommand("ffprobe", [
+    "-v",
+    "error",
+    "-print_format",
+    "json",
+    "-show_streams",
+    "-show_format",
+    absolutePath,
   ]);
 
   if (result.code !== 0) {
@@ -292,22 +297,34 @@ const probeVideoMetadata = async (
       }>;
     };
 
-    const videoStream = parsed.streams?.find((stream) => stream.codec_type === 'video');
-    const duration = parsed.format?.duration ? Number.parseFloat(parsed.format.duration) : null;
+    const videoStream = parsed.streams?.find(
+      (stream) => stream.codec_type === "video",
+    );
+    const duration = parsed.format?.duration
+      ? Number.parseFloat(parsed.format.duration)
+      : null;
 
     return {
-      durationSeconds: typeof duration === 'number' && Number.isFinite(duration) ? duration : null,
-      width: typeof videoStream?.width === 'number' ? videoStream.width : null,
-      height: typeof videoStream?.height === 'number' ? videoStream.height : null,
+      durationSeconds:
+        typeof duration === "number" && Number.isFinite(duration)
+          ? duration
+          : null,
+      width: typeof videoStream?.width === "number" ? videoStream.width : null,
+      height:
+        typeof videoStream?.height === "number" ? videoStream.height : null,
       codecName: videoStream?.codec_name ?? null,
-      formatName: parsed.format?.format_name ?? null
+      formatName: parsed.format?.format_name ?? null,
     };
   } catch {
     return null;
   }
 };
 
-const upsertResume = (db: Database.Database, videoId: string, positionSeconds: number) => {
+const upsertResume = (
+  db: Database.Database,
+  videoId: string,
+  positionSeconds: number,
+) => {
   const now = new Date().toISOString();
   db.prepare(
     `
@@ -316,18 +333,24 @@ const upsertResume = (db: Database.Database, videoId: string, positionSeconds: n
       ON CONFLICT(video_id) DO UPDATE SET
         position_seconds = excluded.position_seconds,
         updated_at = excluded.updated_at
-    `
-  ).run({ video_id: videoId, position_seconds: positionSeconds, updated_at: now });
+    `,
+  ).run({
+    video_id: videoId,
+    position_seconds: positionSeconds,
+    updated_at: now,
+  });
 };
 
 const rescanIntoDatabase = async (
   db: Database.Database,
   videoRootDir: string,
-  runMediaCommand: MediaCommandRunner
+  runMediaCommand: MediaCommandRunner,
 ) => {
   const discovered = await scanVideoDirectory(videoRootDir);
   const indexedAt = new Date().toISOString();
-  const existingRows = db.prepare('SELECT relative_path FROM videos').all() as Array<{
+  const existingRows = db
+    .prepare("SELECT relative_path FROM videos")
+    .all() as Array<{
     relative_path: string;
   }>;
   const existingPaths = new Set(existingRows.map((row) => row.relative_path));
@@ -335,7 +358,10 @@ const rescanIntoDatabase = async (
   // Probe metadata for all discovered videos first, before transaction
   const metadataByPath = new Map<string, VideoMetadata | null>();
   for (const item of discovered) {
-    const metadata = await probeVideoMetadata(runMediaCommand, join(videoRootDir, item.relativePath));
+    const metadata = await probeVideoMetadata(
+      runMediaCommand,
+      join(videoRootDir, item.relativePath),
+    );
     metadataByPath.set(item.relativePath, metadata);
   }
 
@@ -384,7 +410,7 @@ const rescanIntoDatabase = async (
         format_name = excluded.format_name,
         updated_at = excluded.updated_at,
         last_indexed_at = excluded.last_indexed_at
-    `
+    `,
   );
 
   const transaction = db.transaction(() => {
@@ -404,7 +430,7 @@ const rescanIntoDatabase = async (
         format_name: metadata?.formatName ?? null,
         created_at: indexedAt,
         updated_at: indexedAt,
-        last_indexed_at: indexedAt
+        last_indexed_at: indexedAt,
       };
 
       upsertStatement.run(payload);
@@ -417,7 +443,7 @@ const rescanIntoDatabase = async (
     }
 
     const deleteResult = db
-      .prepare('DELETE FROM videos WHERE last_indexed_at != ?')
+      .prepare("DELETE FROM videos WHERE last_indexed_at != ?")
       .run(indexedAt);
 
     return Number(deleteResult.changes);
@@ -429,9 +455,9 @@ const rescanIntoDatabase = async (
     scanned: discovered.length,
     inserted,
     updated,
-    deleted
+    deleted,
   };
-}
+};
 
 export const buildServer = (options: BuildServerOptions = {}) => {
   const app = Fastify({ logger: false });
@@ -439,26 +465,26 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   const videoRootDir = getVideoRootDir(options.videoRootDir);
   const thumbnailCacheDir = getThumbnailCacheDir(options.thumbnailCacheDir);
   const runMediaCommand = options.runMediaCommand ?? defaultMediaCommandRunner;
-  const mutatingMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const mutatingMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-  app.addHook('onRequest', async (request, reply) => {
+  app.addHook("onRequest", async (request, reply) => {
     if (!isLoopbackAddress(request.ip)) {
-      await reply.code(403).send({ error: 'Loopback access only' });
+      await reply.code(403).send({ error: "Loopback access only" });
       return;
     }
 
     const hostHeader = request.headers.host;
-    if (typeof hostHeader !== 'string' || !isAllowedHostHeader(hostHeader)) {
-      await reply.code(403).send({ error: 'Invalid host header' });
+    if (typeof hostHeader !== "string" || !isAllowedHostHeader(hostHeader)) {
+      await reply.code(403).send({ error: "Invalid host header" });
       return;
     }
 
     const method = request.method.toUpperCase();
     if (mutatingMethods.has(method)) {
       const originHeader = request.headers.origin;
-      if (typeof originHeader === 'string') {
+      if (typeof originHeader === "string") {
         if (!isAllowedOrigin(originHeader)) {
-          await reply.code(403).send({ error: 'Origin not allowed' });
+          await reply.code(403).send({ error: "Origin not allowed" });
           return;
         }
       } else {
@@ -468,20 +494,24 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     }
   });
 
-  app.addHook('onClose', async () => {
+  app.addHook("onClose", async () => {
     db.close();
   });
 
-  app.get('/health', async () => ({ ok: true }));
+  app.get("/health", async () => ({ ok: true }));
 
-  app.get('/api/videos', async (request) => {
-    const query = request.query as { page?: string; pageSize?: string; q?: string };
+  app.get("/api/videos", async (request) => {
+    const query = request.query as {
+      page?: string;
+      pageSize?: string;
+      q?: string;
+    };
     const page = parsePositiveInt(query.page, 1);
     const pageSize = Math.min(parsePositiveInt(query.pageSize, 20), 100);
     const offset = (page - 1) * pageSize;
-    const searchTerm = query.q?.trim() ?? '';
+    const searchTerm = query.q?.trim() ?? "";
 
-    const whereClause = searchTerm.length > 0 ? 'WHERE title LIKE @q' : '';
+    const whereClause = searchTerm.length > 0 ? "WHERE title LIKE @q" : "";
     const bindings = searchTerm.length > 0 ? { q: `%${searchTerm}%` } : {};
 
     const totalRow = db
@@ -495,7 +525,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
           ${whereClause}
           ORDER BY title ASC, relative_path ASC
           LIMIT @limit OFFSET @offset
-        `
+        `,
       )
       .all({ ...bindings, limit: pageSize, offset }) as VideoRow[];
 
@@ -503,11 +533,11 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       page,
       pageSize,
       total: totalRow.total,
-      items: rows.map(rowToVideo)
+      items: rows.map(rowToVideo),
     };
   });
 
-  app.get('/api/videos/:id', async (request, reply) => {
+  app.get("/api/videos/:id", async (request, reply) => {
     const params = request.params as { id: string };
     const row = db
       .prepare(
@@ -515,173 +545,208 @@ export const buildServer = (options: BuildServerOptions = {}) => {
           SELECT id, relative_path, title, mtime_ms, size_bytes, duration_seconds, width, height, codec_name, format_name, created_at, updated_at, last_indexed_at
           FROM videos
           WHERE id = ?
-        `
+        `,
       )
       .get(params.id) as VideoRow | undefined;
 
     if (!row) {
-      return reply.code(404).send({ error: 'Video not found' });
+      return reply.code(404).send({ error: "Video not found" });
     }
 
     return rowToVideo(row);
   });
 
-  app.post('/api/index/rescan', async (_request, reply) => {
+  app.post("/api/index/rescan", async (_request, reply) => {
     if (!videoRootDir) {
-      return reply.code(400).send({ error: 'LOCALTUBE_VIDEO_ROOT is not configured' });
+      return reply
+        .code(400)
+        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
     }
 
     try {
-      const result = await rescanIntoDatabase(db, videoRootDir, runMediaCommand);
+      const result = await rescanIntoDatabase(
+        db,
+        videoRootDir,
+        runMediaCommand,
+      );
       return reply.code(200).send(result);
     } catch {
       return reply.code(500).send({
-        error: 'Failed to scan video directory',
-        code: 'VIDEO_SCAN_FAILED'
+        error: "Failed to scan video directory",
+        code: "VIDEO_SCAN_FAILED",
       });
     }
   });
 
-  app.get('/api/videos/:id/resume', async (request, reply) => {
+  app.get("/api/videos/:id/resume", async (request, reply) => {
     const params = request.params as { id: string };
-    const videoExists = db.prepare('SELECT id FROM videos WHERE id = ?').get(params.id) as
-      | { id: string }
-      | undefined;
+    const videoExists = db
+      .prepare("SELECT id FROM videos WHERE id = ?")
+      .get(params.id) as { id: string } | undefined;
 
     if (!videoExists) {
-      return reply.code(404).send({ error: 'Video not found' });
+      return reply.code(404).send({ error: "Video not found" });
     }
 
     const row = db
       .prepare(
-        'SELECT video_id, position_seconds, updated_at FROM resume_progress WHERE video_id = ?'
+        "SELECT video_id, position_seconds, updated_at FROM resume_progress WHERE video_id = ?",
       )
       .get(params.id) as ResumeRow | undefined;
 
     if (!row) {
-      return reply.code(200).send({ videoId: params.id, positionSeconds: 0, updatedAt: null });
+      return reply
+        .code(200)
+        .send({ videoId: params.id, positionSeconds: 0, updatedAt: null });
     }
 
     return {
       videoId: row.video_id,
       positionSeconds: row.position_seconds,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     };
   });
 
-  app.put('/api/videos/:id/resume', async (request, reply) => {
+  app.put("/api/videos/:id/resume", async (request, reply) => {
     const params = request.params as { id: string };
     const body = request.body as { positionSeconds?: unknown };
 
     if (!isFiniteNonNegativeNumber(body?.positionSeconds)) {
-      return reply.code(400).send({ error: 'positionSeconds must be a finite non-negative number' });
+      return reply.code(400).send({
+        error: "positionSeconds must be a finite non-negative number",
+      });
     }
 
-    const videoExists = db.prepare('SELECT id FROM videos WHERE id = ?').get(params.id) as
-      | { id: string }
-      | undefined;
+    const videoExists = db
+      .prepare("SELECT id FROM videos WHERE id = ?")
+      .get(params.id) as { id: string } | undefined;
 
     if (!videoExists) {
-      return reply.code(404).send({ error: 'Video not found' });
+      return reply.code(404).send({ error: "Video not found" });
     }
 
     upsertResume(db, params.id, body.positionSeconds);
     const row = db
       .prepare(
-        'SELECT video_id, position_seconds, updated_at FROM resume_progress WHERE video_id = ?'
+        "SELECT video_id, position_seconds, updated_at FROM resume_progress WHERE video_id = ?",
       )
       .get(params.id) as ResumeRow;
 
     return reply.code(200).send({
       videoId: row.video_id,
       positionSeconds: row.position_seconds,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     });
   });
 
-  app.get('/api/videos/:id/stream', async (request, reply) => {
+  app.get("/api/videos/:id/stream", async (request, reply) => {
     if (!videoRootDir) {
-      return reply.code(400).send({ error: 'LOCALTUBE_VIDEO_ROOT is not configured' });
+      return reply
+        .code(400)
+        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
     }
 
     const params = request.params as { id: string };
     const row = db
-      .prepare('SELECT relative_path, size_bytes FROM videos WHERE id = ?')
-      .get(params.id) as { relative_path: string; size_bytes: number } | undefined;
+      .prepare("SELECT relative_path, size_bytes FROM videos WHERE id = ?")
+      .get(params.id) as
+      | { relative_path: string; size_bytes: number }
+      | undefined;
 
     if (!row) {
-      return reply.code(404).send({ error: 'Video not found' });
+      return reply.code(404).send({ error: "Video not found" });
     }
 
     const absolutePath = join(videoRootDir, row.relative_path);
     const rangeHeader = request.headers.range;
 
-    if (!rangeHeader || typeof rangeHeader !== 'string') {
+    if (!rangeHeader || typeof rangeHeader !== "string") {
       reply.code(200);
-      reply.header('content-type', 'video/mp4');
-      reply.header('accept-ranges', 'bytes');
-      reply.header('content-length', String(row.size_bytes));
+      reply.header("content-type", "video/mp4");
+      reply.header("accept-ranges", "bytes");
+      reply.header("content-length", String(row.size_bytes));
       return reply.send(createReadStream(absolutePath));
     }
 
     const parsedRange = parseRange(rangeHeader, row.size_bytes);
     if (!parsedRange) {
-      return reply.code(416).header('content-range', `bytes */${row.size_bytes}`).send();
+      return reply
+        .code(416)
+        .header("content-range", `bytes */${row.size_bytes}`)
+        .send();
     }
 
     const contentLength = parsedRange.end - parsedRange.start + 1;
     reply.code(206);
-    reply.header('content-type', 'video/mp4');
-    reply.header('accept-ranges', 'bytes');
-    reply.header('content-range', `bytes ${parsedRange.start}-${parsedRange.end}/${row.size_bytes}`);
-    reply.header('content-length', String(contentLength));
-    return reply.send(createReadStream(absolutePath, { start: parsedRange.start, end: parsedRange.end }));
+    reply.header("content-type", "video/mp4");
+    reply.header("accept-ranges", "bytes");
+    reply.header(
+      "content-range",
+      `bytes ${parsedRange.start}-${parsedRange.end}/${row.size_bytes}`,
+    );
+    reply.header("content-length", String(contentLength));
+    return reply.send(
+      createReadStream(absolutePath, {
+        start: parsedRange.start,
+        end: parsedRange.end,
+      }),
+    );
   });
 
-  app.get('/api/videos/:id/thumbnail', async (request, reply) => {
+  app.get("/api/videos/:id/thumbnail", async (request, reply) => {
     if (!videoRootDir) {
-      return reply.code(400).send({ error: 'LOCALTUBE_VIDEO_ROOT is not configured' });
+      return reply
+        .code(400)
+        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
     }
 
     const params = request.params as { id: string };
     const row = db
-      .prepare('SELECT id, relative_path, mtime_ms FROM videos WHERE id = ?')
-      .get(params.id) as { id: string; relative_path: string; mtime_ms: number } | undefined;
+      .prepare("SELECT id, relative_path, mtime_ms FROM videos WHERE id = ?")
+      .get(params.id) as
+      | { id: string; relative_path: string; mtime_ms: number }
+      | undefined;
 
     if (!row) {
-      return reply.code(404).send({ error: 'Video not found' });
+      return reply.code(404).send({ error: "Video not found" });
     }
 
     await mkdir(thumbnailCacheDir, { recursive: true });
-    const thumbnailPath = join(thumbnailCacheDir, `${row.id}-${row.mtime_ms}.jpg`);
+    const thumbnailPath = join(
+      thumbnailCacheDir,
+      `${row.id}-${row.mtime_ms}.jpg`,
+    );
 
     try {
       await access(thumbnailPath);
       reply.code(200);
-      reply.header('content-type', 'image/jpeg');
+      reply.header("content-type", "image/jpeg");
       return reply.send(createReadStream(thumbnailPath));
     } catch {
       const sourcePath = join(videoRootDir, row.relative_path);
-      const ffmpegResult = await runMediaCommand('ffmpeg', [
-        '-y',
-        '-i',
+      const ffmpegResult = await runMediaCommand("ffmpeg", [
+        "-y",
+        "-i",
         sourcePath,
-        '-ss',
-        '00:00:01',
-        '-vframes',
-        '1',
-        thumbnailPath
+        "-ss",
+        "00:00:01",
+        "-vframes",
+        "1",
+        thumbnailPath,
       ]);
 
       if (ffmpegResult.code !== 0) {
         if (isToolUnavailable(ffmpegResult)) {
-          return reply.code(503).send({ error: 'ffmpeg is not available', code: 'MEDIA_TOOL_UNAVAILABLE' });
+          return reply.code(503).send({
+            error: "ffmpeg is not available",
+            code: "MEDIA_TOOL_UNAVAILABLE",
+          });
         }
-        return reply.code(500).send({ error: 'Failed to generate thumbnail' });
+        return reply.code(500).send({ error: "Failed to generate thumbnail" });
       }
 
       reply.code(200);
-      reply.header('content-type', 'image/jpeg');
+      reply.header("content-type", "image/jpeg");
       return reply.send(createReadStream(thumbnailPath));
     }
   });
@@ -690,7 +755,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
 };
 
 export const startServer = async (app = buildServer(), port = 3000) => {
-  await app.listen({ port, host: '127.0.0.1' });
+  await app.listen({ port, host: "127.0.0.1" });
   console.log(`LocalTube running → http://localhost:${port}`);
   return app;
 };

@@ -46,8 +46,8 @@ npm run dev
 
 Default app URLs:
 
-- Backend: http://127.0.0.1:3000
-- Frontend: http://127.0.0.1:5173
+- Backend: <http://127.0.0.1:3000>
+- Frontend: <http://127.0.0.1:5173>
 
 ## Production Build And Local Run
 
@@ -63,7 +63,7 @@ Run full production preview (backend + frontend):
 npm run start
 ```
 
-This prints the URLs at startup. Open your browser at **http://127.0.0.1:4173**.
+This prints the URLs at startup. Open your browser at **<http://127.0.0.1:4173>**.
 
 Run only backend production server:
 
