@@ -1,11 +1,18 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeAll } from 'vitest';
+import { openDatabase } from '../src/db.js';
 import { buildServer, startServer } from '../src/server.js';
+
+beforeAll(() => {
+  // Increase timeout for Phase 3 tests with media command execution
+  vi.setConfig({ testTimeout: 20000 });
+});
 
 const startedServers: Array<{ close: () => Promise<void> }> = [];
 const tempDirs: string[] = [];
+const mediaCommandCalls: string[] = [];
 
 const createVideoRoot = async () => {
   const dir = await mkdtemp(join(tmpdir(), 'localtube-videos-'));
@@ -21,6 +28,8 @@ const writeVideo = async (rootDir: string, relativePath: string, content = 'vide
 };
 
 afterEach(async () => {
+  mediaCommandCalls.length = 0;
+
   while (startedServers.length > 0) {
     const server = startedServers.pop();
     if (server) {
@@ -297,5 +306,395 @@ describe('phase 2 indexing and catalog APIs', () => {
     expect(filtered.statusCode).toBe(200);
     expect(filtered.json().total).toBe(1);
     expect(filtered.json().items[0].title).toBe('alpha');
+  });
+});
+
+describe('phase 3 media APIs', () => {
+  it('range request returns 206', async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'clip.mp4', '0123456789');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/videos?page=1&pageSize=1',
+      remoteAddress: '127.0.0.1'
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const streamResponse = await app.inject({
+      method: 'GET',
+      url: `/api/videos/${videoId}/stream`,
+      headers: {
+        range: 'bytes=0-3'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(streamResponse.statusCode).toBe(206);
+    expect(streamResponse.headers['content-range']).toBe('bytes 0-3/10');
+    expect(streamResponse.body).toBe('0123');
+  });
+
+  it('invalid range returns 416', async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'clip.mp4', '0123456789');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/videos?page=1&pageSize=1',
+      remoteAddress: '127.0.0.1'
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const streamResponse = await app.inject({
+      method: 'GET',
+      url: `/api/videos/${videoId}/stream`,
+      headers: {
+        range: 'bytes=100-200'
+      },
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(streamResponse.statusCode).toBe(416);
+    expect(streamResponse.headers['content-range']).toBe('bytes */10');
+  });
+
+  it('ffprobe metadata persisted', async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'meta.mp4', 'metadata-video');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      runMediaCommand: async (command) => {
+        mediaCommandCalls.push(command);
+        if (command === 'ffprobe') {
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              format: {
+                duration: '120.5',
+                format_name: 'mov,mp4,m4a,3gp,3g2,mj2'
+              },
+              streams: [
+                {
+                  codec_type: 'video',
+                  codec_name: 'h264',
+                  width: 1920,
+                  height: 1080
+                }
+              ]
+            }),
+            stderr: ''
+          };
+        }
+
+        return {
+          code: 0,
+          stdout: '',
+          stderr: ''
+        };
+      }
+    });
+
+    const rescanResponse = await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+    expect(rescanResponse.statusCode).toBe(200);
+
+    const db = openDatabase(sqlitePath);
+    const row = db
+      .prepare(
+        `
+          SELECT duration_seconds, width, height, codec_name, format_name
+          FROM videos
+          WHERE relative_path = 'meta.mp4'
+        `
+      )
+      .get() as
+      | {
+          duration_seconds: number;
+          width: number;
+          height: number;
+          codec_name: string;
+          format_name: string;
+        }
+      | undefined;
+    db.close();
+
+    expect(row).toBeDefined();
+    expect(row?.duration_seconds).toBe(120.5);
+    expect(row?.width).toBe(1920);
+    expect(row?.height).toBe(1080);
+    expect(row?.codec_name).toBe('h264');
+    expect(row?.format_name).toContain('mp4');
+  });
+
+  it('thumbnail generation cached', async () => {
+    const rootDir = await createVideoRoot();
+    const cacheDir = await mkdtemp(join(tmpdir(), 'localtube-thumbs-'));
+    tempDirs.push(cacheDir);
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'thumb.mp4', 'thumbnail-video');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      thumbnailCacheDir: cacheDir,
+      runMediaCommand: async (command, args) => {
+        mediaCommandCalls.push(command);
+
+        if (command === 'ffmpeg') {
+          const outputPath = args[args.length - 1];
+          if (outputPath) {
+            await writeFile(outputPath, 'jpeg-bytes', 'utf8');
+          }
+        }
+
+        if (command === 'ffprobe') {
+          return {
+            code: 0,
+            stdout: JSON.stringify({ format: {}, streams: [] }),
+            stderr: ''
+          };
+        }
+
+        return {
+          code: 0,
+          stdout: '',
+          stderr: ''
+        };
+      }
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/videos?page=1&pageSize=1',
+      remoteAddress: '127.0.0.1'
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const firstThumbnail = await app.inject({
+      method: 'GET',
+      url: `/api/videos/${videoId}/thumbnail`,
+      remoteAddress: '127.0.0.1'
+    });
+
+    const secondThumbnail = await app.inject({
+      method: 'GET',
+      url: `/api/videos/${videoId}/thumbnail`,
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(firstThumbnail.statusCode).toBe(200);
+    expect(secondThumbnail.statusCode).toBe(200);
+
+    const ffmpegCalls = mediaCommandCalls.filter((command) => command === 'ffmpeg');
+    expect(ffmpegCalls).toHaveLength(1);
+  });
+
+  it('thumbnail endpoint returns 503 when ffmpeg unavailable', async () => {
+    const rootDir = await createVideoRoot();
+    const cacheDir = await mkdtemp(join(tmpdir(), 'localtube-thumbs-'));
+    tempDirs.push(cacheDir);
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'clip.mp4', 'video-bytes');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      thumbnailCacheDir: cacheDir,
+      runMediaCommand: async (command) => {
+        mediaCommandCalls.push(command);
+
+        if (command === 'ffmpeg') {
+          return {
+            code: 127,
+            stdout: '',
+            stderr: 'ffmpeg: not found'
+          };
+        }
+
+        if (command === 'ffprobe') {
+          return {
+            code: 0,
+            stdout: JSON.stringify({ format: {}, streams: [] }),
+            stderr: ''
+          };
+        }
+
+        return {
+          code: 0,
+          stdout: '',
+          stderr: ''
+        };
+      }
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/videos?page=1&pageSize=1',
+      remoteAddress: '127.0.0.1'
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const thumbnailResponse = await app.inject({
+      method: 'GET',
+      url: `/api/videos/${videoId}/thumbnail`,
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(thumbnailResponse.statusCode).toBe(503);
+    expect(thumbnailResponse.json()).toEqual({
+      error: 'ffmpeg is not available',
+      code: 'MEDIA_TOOL_UNAVAILABLE'
+    });
+  });
+
+  it('rescan succeeds and metadata remains null when ffprobe unavailable', async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'noprobe.mp4', 'video-without-metadata');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      runMediaCommand: async (command) => {
+        mediaCommandCalls.push(command);
+
+        if (command === 'ffprobe') {
+          return {
+            code: 127,
+            stdout: '',
+            stderr: 'ffprobe: not found'
+          };
+        }
+
+        return {
+          code: 0,
+          stdout: '',
+          stderr: ''
+        };
+      }
+    });
+
+    const rescanResponse = await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    expect(rescanResponse.statusCode).toBe(200);
+    expect(rescanResponse.json()).toMatchObject({
+      scanned: 1,
+      inserted: 1
+    });
+
+    const db = openDatabase(sqlitePath);
+    const row = db
+      .prepare(
+        `
+          SELECT duration_seconds, width, height, codec_name, format_name
+          FROM videos
+          WHERE relative_path = 'noprobe.mp4'
+        `
+      )
+      .get() as
+      | {
+          duration_seconds: number | null;
+          width: number | null;
+          height: number | null;
+          codec_name: string | null;
+          format_name: string | null;
+        }
+      | undefined;
+    db.close();
+
+    expect(row).toBeDefined();
+    expect(row?.duration_seconds).toBeNull();
+    expect(row?.width).toBeNull();
+    expect(row?.height).toBeNull();
+    expect(row?.codec_name).toBeNull();
+    expect(row?.format_name).toBeNull();
+  });
+
+  it('malformed numeric ranges rejected (parseInt partial match)', async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, 'catalog.db');
+    await writeVideo(rootDir, 'clip.mp4', '0123456789');
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath
+    });
+    startedServers.push(app);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/index/rescan',
+      remoteAddress: '127.0.0.1'
+    });
+
+    const listResponse = await app.inject({
+      method: 'GET',
+      url: '/api/videos?page=1&pageSize=1',
+      remoteAddress: '127.0.0.1'
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const malformedResponses = [
+      { range: 'bytes=0abc-3' },
+      { range: 'bytes=0-3xyz' },
+      { range: 'bytes=00-03' }
+    ];
+
+    for (const { range } of malformedResponses) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/videos/${videoId}/stream`,
+        headers: { range },
+        remoteAddress: '127.0.0.1'
+      });
+      expect(response.statusCode).toBe(416, `Expected range '${range}' to be rejected with 416`);
+    }
   });
 });
