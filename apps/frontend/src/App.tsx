@@ -90,6 +90,23 @@ const formatDuration = (seconds: number | null): string => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
+const PAGINATION_WINDOW = 2;
+
+const getPaginationItems = (
+  current: number,
+  total: number,
+): (number | "…")[] => {
+  if (total <= 1) return [1];
+  const low = Math.max(2, current - PAGINATION_WINDOW);
+  const high = Math.min(total - 1, current + PAGINATION_WINDOW);
+  const items: (number | "…")[] = [1];
+  if (low > 2) items.push("…");
+  for (let p = low; p <= high; p++) items.push(p);
+  if (high < total - 1) items.push("…");
+  items.push(total);
+  return items;
+};
+
 const App = () => {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromLocation());
   const [browse, setBrowse] = useState<VideoListResponse | null>(null);
@@ -309,6 +326,7 @@ const App = () => {
                 <nav aria-label="Catalog pagination" className="pagination">
                   <button
                     type="button"
+                    className="pagination-nav"
                     onClick={() =>
                       navigate(
                         toBrowsePath(
@@ -322,11 +340,42 @@ const App = () => {
                   >
                     Previous
                   </button>
-                  <span>
-                    Page {route.page} of {totalPages}
-                  </span>
+                  {getPaginationItems(route.page, totalPages).map((item, i) =>
+                    item === "…" ? (
+                      <span
+                        key={`…-${i}`}
+                        className="pagination-ellipsis"
+                        aria-hidden="true"
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        className={
+                          item === route.page
+                            ? "pagination-page pagination-current"
+                            : "pagination-page"
+                        }
+                        onClick={() =>
+                          navigate(
+                            toBrowsePath(item, route.pageSize, route.q),
+                          )
+                        }
+                        disabled={item === route.page}
+                        aria-label={`Page ${item}`}
+                        aria-current={
+                          item === route.page ? "page" : undefined
+                        }
+                      >
+                        {item}
+                      </button>
+                    ),
+                  )}
                   <button
                     type="button"
+                    className="pagination-nav"
                     onClick={() =>
                       navigate(
                         toBrowsePath(

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import App from "../src/App";
@@ -92,6 +92,62 @@ describe("phase 4 frontend integration", () => {
     expect(appCss).toContain(".video-title {");
     expect(appCss).toContain("min-height: calc(1em * 1.3 * 3);");
     expect(appCss).toContain("-webkit-line-clamp: 3;");
+  });
+
+  it("pagination shows window around current page with first and last", async () => {
+    window.history.pushState({}, "", "/?page=5&pageSize=5");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 5,
+          pageSize: 5,
+          total: 50,
+          items: Array.from({ length: 5 }, (_, i) => ({
+            id: `video-${i}`,
+            title: `Video ${i + 1}`,
+            path: `v${i}.mp4`,
+            sizeBytes: 100,
+            mtimeMs: 1,
+            durationSeconds: null,
+            width: null,
+            height: null,
+            codecName: null,
+            formatName: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          })),
+        });
+      }
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Video 1" });
+
+    const nav = screen.getByRole("navigation", { name: "Catalog pagination" });
+
+    // First and last pages always visible (totalPages = 10)
+    expect(within(nav).getByRole("button", { name: "Page 1" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Page 10" })).toBeInTheDocument();
+
+    // Window ±2 around page 5: pages 3, 4, 5, 6, 7
+    expect(within(nav).getByRole("button", { name: "Page 3" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Page 7" })).toBeInTheDocument();
+
+    // Pages outside the window are not shown
+    expect(within(nav).queryByRole("button", { name: "Page 2" })).toBeNull();
+    expect(within(nav).queryByRole("button", { name: "Page 8" })).toBeNull();
+
+    // Current page is marked
+    expect(
+      within(nav).getByRole("button", { name: "Page 5" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    // Previous / Next present
+    expect(within(nav).getByRole("button", { name: "Previous" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Next" })).toBeInTheDocument();
   });
 
   it("browse grid renders paged videos", async () => {
