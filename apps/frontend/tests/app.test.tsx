@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import App from "../src/App";
+import App from "../src/App.js";
 
 type MockResponseInit = {
   status?: number;
@@ -20,6 +20,171 @@ describe("phase 4 frontend integration", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
     vi.restoreAllMocks();
+  });
+
+  it("browse thumbnail hover starts and stops a silent preview", async () => {
+    const playMock = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    const pauseMock = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => {});
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          items: [
+            {
+              id: "video-preview",
+              title: "Preview Video",
+              path: "preview.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 75,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Preview Video" });
+
+    const media = document.querySelector(".video-media");
+    const preview = document.querySelector(".video-preview") as HTMLVideoElement | null;
+
+    expect(media).not.toBeNull();
+    expect(preview).not.toBeNull();
+    expect(preview).not.toHaveAttribute("src");
+    expect(preview?.muted).toBe(true);
+    expect(preview?.playsInline).toBe(true);
+
+    Object.defineProperty(preview as HTMLVideoElement, "currentTime", {
+      configurable: true,
+      writable: true,
+      value: 9,
+    });
+
+    fireEvent.mouseEnter(media as Element);
+
+    await waitFor(() => {
+      expect(playMock).toHaveBeenCalled();
+      expect(media).not.toHaveClass("video-media-active");
+      expect(preview?.currentTime).toBe(0);
+      expect(preview).toHaveAttribute("src", "/api/videos/video-preview/stream");
+    });
+
+    fireEvent.loadedData(preview as HTMLVideoElement);
+
+    await waitFor(() => {
+      expect(media).toHaveClass("video-media-active");
+    });
+
+    (preview as HTMLVideoElement).currentTime = 12;
+    fireEvent.mouseLeave(media as Element);
+
+    await waitFor(() => {
+      expect(media).not.toHaveClass("video-media-active");
+      expect(pauseMock).toHaveBeenCalled();
+      expect(preview?.currentTime).toBe(0);
+    });
+  });
+
+  it("hovered thumbnail click still navigates to watch view", async () => {
+    const playMock = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?") && !url.includes("/resume")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          items: [
+            {
+              id: "video-click",
+              title: "Hover Click",
+              path: "hover-click.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 75,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/api/videos/video-click")) {
+        return jsonResponse({
+          id: "video-click",
+          title: "Hover Click",
+          path: "hover-click.mp4",
+          sizeBytes: 100,
+          mtimeMs: 1,
+          durationSeconds: 75,
+          width: 1920,
+          height: 1080,
+          codecName: "h264",
+          formatName: "mp4",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
+      if (url.endsWith("/api/videos/video-click/resume")) {
+        return jsonResponse({
+          videoId: "video-click",
+          positionSeconds: 0,
+          updatedAt: null,
+        });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    const media = (await screen.findByText("Hover Click")).closest(".video-card")?.querySelector(
+      ".video-media",
+    );
+    const preview = document.querySelector(".video-preview") as HTMLVideoElement | null;
+
+    expect(media).not.toBeNull();
+    expect(preview).not.toBeNull();
+
+    fireEvent.mouseEnter(media as Element);
+    expect(playMock).toHaveBeenCalled();
+    fireEvent.loadedData(preview as HTMLVideoElement);
+
+    fireEvent.click(media as Element);
+
+    expect(await screen.findByRole("heading", { name: "Hover Click" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Video player")).toHaveAttribute(
+      "src",
+      "/api/videos/video-click/stream",
+    );
+    expect(window.location.pathname).toBe("/watch/video-click");
   });
 
   it("browse cards use a fixed title block for consistent heights", async () => {
@@ -87,11 +252,15 @@ describe("phase 4 frontend integration", () => {
     );
     expect(shortTitle.closest(".video-copy")).not.toBeNull();
     expect(longTitle.closest(".video-copy")).not.toBeNull();
+    expect(document.querySelectorAll(".video-media")).toHaveLength(2);
+    expect(document.querySelectorAll(".video-preview")).toHaveLength(2);
+    expect(document.querySelectorAll('.video-preview[src]')).toHaveLength(0);
 
     const appCss = readFileSync(resolve(process.cwd(), "src/App.css"), "utf8");
     expect(appCss).toContain(".video-title {");
     expect(appCss).toContain("min-height: calc(1em * 1.3 * 3);");
     expect(appCss).toContain("-webkit-line-clamp: 3;");
+    expect(appCss).toContain(".video-media-active .video-preview {");
   });
 
   it("pagination shows window around current page with first and last", async () => {

@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import "./App.css";
 
 type VideoItem = {
@@ -112,12 +113,17 @@ const App = () => {
   const [browse, setBrowse] = useState<VideoListResponse | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
+  const [previewReadyIds, setPreviewReadyIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const [watchVideo, setWatchVideo] = useState<VideoDetail | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [resumePosition, setResumePosition] = useState<number>(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const previewVideoRefs = useRef(new Map<string, HTMLVideoElement>());
   const lastSyncedSecondsRef = useRef<number>(0);
 
   useEffect(() => {
@@ -133,8 +139,32 @@ const App = () => {
   useEffect(() => {
     if (route.kind === "browse") {
       setSearchInput(route.q);
+      setPreviewVideoId(null);
+      setPreviewReadyIds(new Set());
+      return;
     }
+
+    setPreviewVideoId(null);
+    setPreviewReadyIds(new Set());
   }, [route]);
+
+  useEffect(() => {
+    for (const [videoId, element] of previewVideoRefs.current) {
+      if (videoId === previewVideoId) {
+        element.currentTime = 0;
+        const playAttempt = element.play();
+        if (playAttempt && typeof playAttempt.catch === "function") {
+          void playAttempt.catch(() => {
+            // Ignore autoplay failures; the thumbnail stays visible until a preview frame loads.
+          });
+        }
+        continue;
+      }
+
+      element.pause();
+      element.currentTime = 0;
+    }
+  }, [previewVideoId]);
 
   useEffect(() => {
     if (route.kind !== "browse") {
@@ -259,6 +289,45 @@ const App = () => {
     });
   };
 
+  const setPreviewVideoRef =
+    (videoId: string) => (element: HTMLVideoElement | null) => {
+      if (element) {
+        previewVideoRefs.current.set(videoId, element);
+        return;
+      }
+
+      previewVideoRefs.current.delete(videoId);
+    };
+
+  const startPreview = (videoId: string) => {
+    setPreviewReadyIds((current) => {
+      if (!current.has(videoId)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.delete(videoId);
+      return next;
+    });
+    setPreviewVideoId(videoId);
+  };
+
+  const stopPreview = (videoId: string) => {
+    setPreviewVideoId((current) => (current === videoId ? null : current));
+  };
+
+  const markPreviewReady = (videoId: string) => {
+    setPreviewReadyIds((current) => {
+      if (current.has(videoId)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.add(videoId);
+      return next;
+    });
+  };
+
   return (
     <div className="app-shell">
       <header className="top-bar">
@@ -308,11 +377,38 @@ const App = () => {
                           navigate(`/watch/${encodeURIComponent(video.id)}`)
                         }
                       >
-                        <img
-                          src={`/api/videos/${video.id}/thumbnail`}
-                          alt=""
-                          loading="lazy"
-                        />
+                        <div
+                          className={
+                            previewVideoId === video.id &&
+                            previewReadyIds.has(video.id)
+                              ? "video-media video-media-active"
+                              : "video-media"
+                          }
+                          onMouseEnter={() => startPreview(video.id)}
+                          onMouseLeave={() => stopPreview(video.id)}
+                        >
+                          <img
+                            src={`/api/videos/${video.id}/thumbnail`}
+                            alt=""
+                            loading="lazy"
+                          />
+                          <video
+                            ref={setPreviewVideoRef(video.id)}
+                            className="video-preview"
+                            src={
+                              previewVideoId === video.id
+                                ? `/api/videos/${video.id}/stream`
+                                : undefined
+                            }
+                            muted
+                            playsInline
+                            loop
+                            preload="metadata"
+                            onLoadedData={() => markPreviewReady(video.id)}
+                            aria-hidden="true"
+                            tabIndex={-1}
+                          />
+                        </div>
                         <div className="video-copy">
                           <h2 className="video-title" title={video.title}>
                             {video.title}
