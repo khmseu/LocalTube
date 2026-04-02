@@ -374,7 +374,7 @@ describe("phase 4 frontend integration", () => {
       screen.getByRole("heading", { name: "Fourth Video" }),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/videos?page=2&pageSize=2&q=",
+      "/api/videos?page=2&pageSize=2&q=&sort=alphabetical",
       expect.anything(),
     );
   });
@@ -403,7 +403,71 @@ describe("phase 4 frontend integration", () => {
     });
 
     expect(fetchMock).toHaveBeenLastCalledWith(
-      "/api/videos?page=1&pageSize=12&q=cats",
+      "/api/videos?page=1&pageSize=12&q=cats&sort=alphabetical",
+      expect.anything(),
+    );
+  });
+
+  it("sort selection updates catalog request and resets to page 1", async () => {
+    window.history.pushState({}, "", "/?page=3&pageSize=2");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 2,
+          total: 2,
+          items: [
+            {
+              id: "video-sort-1",
+              title: "Sort One",
+              path: "sort-1.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 100,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+            {
+              id: "video-sort-2",
+              title: "Sort Two",
+              path: "sort-2.mp4",
+              sizeBytes: 120,
+              mtimeMs: 2,
+              durationSeconds: 200,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Sort One" });
+    fireEvent.change(screen.getByLabelText("Sort by"), {
+      target: { value: "runtime" },
+    });
+
+    await waitFor(() => {
+      expect(window.location.search).toContain("page=1");
+      expect(window.location.search).toContain("sort=runtime");
+    });
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/videos?page=1&pageSize=2&q=&sort=runtime",
       expect.anything(),
     );
   });

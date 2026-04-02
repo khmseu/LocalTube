@@ -29,6 +29,7 @@ type BrowseRoute = {
   page: number;
   pageSize: number;
   q: string;
+  sort: CatalogSortMode;
 };
 
 type WatchRoute = {
@@ -38,7 +39,10 @@ type WatchRoute = {
 
 type AppRoute = BrowseRoute | WatchRoute;
 
+type CatalogSortMode = "alphabetical" | "runtime";
+
 const DEFAULT_PAGE_SIZE = 12;
+const DEFAULT_SORT_MODE: CatalogSortMode = "alphabetical";
 
 const readPositiveNumber = (value: string | null, fallback: number): number => {
   if (!value) {
@@ -61,19 +65,29 @@ const getRouteFromLocation = (): AppRoute => {
   }
 
   const params = new URLSearchParams(window.location.search);
+  const sortParam = params.get("sort");
+  const sort: CatalogSortMode =
+    sortParam === "runtime" ? "runtime" : DEFAULT_SORT_MODE;
   return {
     kind: "browse",
     page: readPositiveNumber(params.get("page"), 1),
     pageSize: readPositiveNumber(params.get("pageSize"), DEFAULT_PAGE_SIZE),
     q: params.get("q")?.trim() ?? "",
+    sort,
   };
 };
 
-const toBrowsePath = (page: number, pageSize: number, q: string): string => {
+const toBrowsePath = (
+  page: number,
+  pageSize: number,
+  q: string,
+  sort: CatalogSortMode,
+): string => {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("pageSize", String(pageSize));
   params.set("q", q);
+  params.set("sort", sort);
   return `/?${params.toString()}`;
 };
 
@@ -173,7 +187,7 @@ const App = () => {
 
     setBrowseError(null);
     const controller = new AbortController();
-    const url = `/api/videos?page=${route.page}&pageSize=${route.pageSize}&q=${encodeURIComponent(route.q)}`;
+    const url = `/api/videos?page=${route.page}&pageSize=${route.pageSize}&q=${encodeURIComponent(route.q)}&sort=${route.sort}`;
 
     fetch(url, { method: "GET", signal: controller.signal })
       .then(async (response) => {
@@ -264,7 +278,16 @@ const App = () => {
     event.preventDefault();
     const pageSize =
       route.kind === "browse" ? route.pageSize : DEFAULT_PAGE_SIZE;
-    navigate(toBrowsePath(1, pageSize, searchInput.trim()));
+    const sort = route.kind === "browse" ? route.sort : DEFAULT_SORT_MODE;
+    navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
+  };
+
+  const changeSortMode = (nextSort: CatalogSortMode) => {
+    if (route.kind !== "browse") {
+      return;
+    }
+
+    navigate(toBrowsePath(1, route.pageSize, route.q, nextSort));
   };
 
   const onTimeUpdate = () => {
@@ -334,7 +357,9 @@ const App = () => {
         <button
           className="brand"
           type="button"
-          onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ""))}
+          onClick={() =>
+            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+          }
         >
           LocalTube
         </button>
@@ -367,6 +392,19 @@ const App = () => {
               <p>Loading videos...</p>
             ) : (
               <>
+                <div className="browse-controls">
+                  <label htmlFor="catalog-sort">Sort by</label>
+                  <select
+                    id="catalog-sort"
+                    value={route.sort}
+                    onChange={(event) =>
+                      changeSortMode(event.target.value as CatalogSortMode)
+                    }
+                  >
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="runtime">Runtime (longest first)</option>
+                  </select>
+                </div>
                 <ul className="video-grid">
                   {browse.items.map((video) => (
                     <li key={video.id} className="video-card">
@@ -429,6 +467,7 @@ const App = () => {
                           Math.max(1, route.page - 1),
                           route.pageSize,
                           route.q,
+                          route.sort,
                         ),
                       )
                     }
@@ -456,7 +495,12 @@ const App = () => {
                         }
                         onClick={() =>
                           navigate(
-                            toBrowsePath(item, route.pageSize, route.q),
+                            toBrowsePath(
+                              item,
+                              route.pageSize,
+                              route.q,
+                              route.sort,
+                            ),
                           )
                         }
                         disabled={item === route.page}
@@ -478,6 +522,7 @@ const App = () => {
                           Math.min(totalPages, route.page + 1),
                           route.pageSize,
                           route.q,
+                          route.sort,
                         ),
                       )
                     }
@@ -494,7 +539,9 @@ const App = () => {
             <button
               type="button"
               className="back-link"
-              onClick={() => navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, ""))}
+              onClick={() =>
+                navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+              }
             >
               Back to Browse
             </button>

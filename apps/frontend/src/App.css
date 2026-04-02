@@ -89,6 +89,27 @@ main {
   gap: 1rem;
 }
 
+.browse-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.browse-controls label {
+  font-size: 0.92rem;
+  color: #5f615f;
+}
+
+.browse-controls select {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.92rem;
+}
+
 .video-grid {
   list-style: none;
   margin: 0;
@@ -268,5 +289,13 @@ main {
 
   main {
     padding: 0.8rem;
+  }
+
+  .browse-controls {
+    justify-content: stretch;
+  }
+
+  .browse-controls select {
+    flex: 1;
   }
 }

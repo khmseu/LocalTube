@@ -406,6 +406,67 @@ describe("phase 2 indexing and catalog APIs", () => {
     expect(filtered.json().total).toBe(1);
     expect(filtered.json().items[0].title).toBe("alpha");
   });
+
+  it("catalog sort mode supports alphabetical and runtime ordering", async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, "catalog.db");
+    const files = ["a.mp4", "b.mp4", "c.mp4", "d.mp4"];
+    for (const file of files) {
+      await writeVideo(rootDir, file, file);
+    }
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      runMediaCommand: async () => ({ code: 0, stdout: "", stderr: "" }),
+    });
+
+    const rescanResponse = await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+    expect(rescanResponse.statusCode).toBe(200);
+
+    const db = openDatabase(sqlitePath);
+    db.prepare(
+      "UPDATE videos SET title = ?, duration_seconds = ? WHERE relative_path = ?",
+    ).run("Beta Tie", 120, "a.mp4");
+    db.prepare(
+      "UPDATE videos SET title = ?, duration_seconds = ? WHERE relative_path = ?",
+    ).run("Alpha Tie", 120, "b.mp4");
+    db.prepare(
+      "UPDATE videos SET title = ?, duration_seconds = ? WHERE relative_path = ?",
+    ).run("Longest", 300, "c.mp4");
+    db.prepare(
+      "UPDATE videos SET title = ?, duration_seconds = ? WHERE relative_path = ?",
+    ).run("Unknown", null, "d.mp4");
+    db.close();
+
+    const alphabetical = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=10&sort=alphabetical",
+      remoteAddress: "127.0.0.1",
+    });
+    expect(alphabetical.statusCode).toBe(200);
+    expect(
+      alphabetical.json().items.map((item: { title: string }) => item.title),
+    ).toEqual(["Alpha Tie", "Beta Tie", "Longest", "Unknown"]);
+
+    const runtime = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=10&sort=runtime",
+      remoteAddress: "127.0.0.1",
+    });
+    expect(runtime.statusCode).toBe(200);
+    expect(runtime.json().items.map((item: { title: string }) => item.title)).toEqual([
+      "Longest",
+      "Alpha Tie",
+      "Beta Tie",
+      "Unknown",
+    ]);
+  });
 });
 
 describe("phase 3 media APIs", () => {

@@ -63,6 +63,8 @@ type BuildServerOptions = {
   runMediaCommand?: MediaCommandRunner;
 };
 
+type CatalogSortMode = "alphabetical" | "runtime";
+
 type ConfigValidationOptions = {
   videoRootDir?: string;
 };
@@ -129,6 +131,14 @@ const parsePositiveInt = (value: string | undefined, fallback: number) => {
   }
 
   return parsed;
+};
+
+const parseCatalogSortMode = (value: string | undefined): CatalogSortMode => {
+  if (value === "runtime") {
+    return "runtime";
+  }
+
+  return "alphabetical";
 };
 
 const isFiniteNonNegativeNumber = (value: unknown): value is number => {
@@ -548,14 +558,20 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       page?: string;
       pageSize?: string;
       q?: string;
+      sort?: string;
     };
     const page = parsePositiveInt(query.page, 1);
     const pageSize = Math.min(parsePositiveInt(query.pageSize, 20), 100);
     const offset = (page - 1) * pageSize;
     const searchTerm = query.q?.trim() ?? "";
+    const sortMode = parseCatalogSortMode(query.sort);
 
     const whereClause = searchTerm.length > 0 ? "WHERE title LIKE @q" : "";
     const bindings = searchTerm.length > 0 ? { q: `%${searchTerm}%` } : {};
+    const orderByClause =
+      sortMode === "runtime"
+        ? "ORDER BY duration_seconds IS NULL ASC, duration_seconds DESC, title ASC, relative_path ASC"
+        : "ORDER BY title ASC, relative_path ASC";
 
     const totalRow = db
       .prepare(`SELECT COUNT(*) as total FROM videos ${whereClause}`)
@@ -566,7 +582,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
           SELECT id, relative_path, title, mtime_ms, size_bytes, duration_seconds, width, height, codec_name, format_name, created_at, updated_at, last_indexed_at
           FROM videos
           ${whereClause}
-          ORDER BY title ASC, relative_path ASC
+          ${orderByClause}
           LIMIT @limit OFFSET @offset
         `,
       )
