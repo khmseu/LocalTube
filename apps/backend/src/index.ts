@@ -5,7 +5,8 @@ import { parse } from "dotenv";
 import { expand } from "dotenv-expand";
 import { buildServer, startServer, validateServerConfig } from "./server.js";
 
-const envPath = process.env.DOTENV_CONFIG_PATH ?? join(import.meta.dirname, "..", ".env");
+const envPath =
+  process.env.DOTENV_CONFIG_PATH ?? join(import.meta.dirname, "..", ".env");
 const parsed = parse(readFileSync(envPath, { encoding: "utf8" }));
 expand({ parsed });
 

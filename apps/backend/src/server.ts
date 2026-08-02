@@ -146,14 +146,25 @@ const isFiniteNonNegativeNumber = (value: unknown): value is number => {
 };
 
 const getDatabasePath = (sqlitePath?: string) => {
-  const source = sqlitePath ? "option" : process.env.LOCALTUBE_SQLITE_PATH ? "env" : "default";
-  const path = sqlitePath ?? process.env.LOCALTUBE_SQLITE_PATH ?? join(process.cwd(), "localtube.db");
+  const source = sqlitePath
+    ? "option"
+    : process.env.LOCALTUBE_SQLITE_PATH
+      ? "env"
+      : "default";
+  const path =
+    sqlitePath ??
+    process.env.LOCALTUBE_SQLITE_PATH ??
+    join(process.cwd(), "localtube.db");
   console.log(`[Config] LOCALTUBE_SQLITE_PATH: "${path}" (from ${source})`);
   return path;
 };
 
 const getVideoRootDir = (videoRootDir?: string) => {
-  const source = videoRootDir ? "option" : process.env.LOCALTUBE_VIDEO_ROOT ? "env" : "none";
+  const source = videoRootDir
+    ? "option"
+    : process.env.LOCALTUBE_VIDEO_ROOT
+      ? "env"
+      : "none";
   const path = videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
   console.log(`[Config] LOCALTUBE_VIDEO_ROOT: "${path}" (from ${source})`);
   return path;
@@ -173,16 +184,34 @@ export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
 };
 
 const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
-  const source = thumbnailCacheDir ? "option" : process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ? "env" : "default";
-  const path = thumbnailCacheDir ?? process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ?? join(process.cwd(), ".localtube-thumbnails");
-  console.log(`[Config] LOCALTUBE_THUMBNAIL_CACHE_DIR: "${path}" (from ${source})`);
+  const source = thumbnailCacheDir
+    ? "option"
+    : process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR
+      ? "env"
+      : "default";
+  const path =
+    thumbnailCacheDir ??
+    process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ??
+    join(process.cwd(), ".localtube-thumbnails");
+  console.log(
+    `[Config] LOCALTUBE_THUMBNAIL_CACHE_DIR: "${path}" (from ${source})`,
+  );
   return path;
 };
 
 const getFrontendDistDir = (frontendDistDir?: string) => {
-  const source = frontendDistDir ? "option" : process.env.LOCALTUBE_FRONTEND_DIST_DIR ? "env" : "default";
-  const path = frontendDistDir ?? process.env.LOCALTUBE_FRONTEND_DIST_DIR ?? resolve(process.cwd(), "../frontend/dist");
-  console.log(`[Config] LOCALTUBE_FRONTEND_DIST_DIR: "${path}" (from ${source})`);
+  const source = frontendDistDir
+    ? "option"
+    : process.env.LOCALTUBE_FRONTEND_DIST_DIR
+      ? "env"
+      : "default";
+  const path =
+    frontendDistDir ??
+    process.env.LOCALTUBE_FRONTEND_DIST_DIR ??
+    resolve(process.cwd(), "../frontend/dist");
+  console.log(
+    `[Config] LOCALTUBE_FRONTEND_DIST_DIR: "${path}" (from ${source})`,
+  );
   return path;
 };
 
