@@ -34,7 +34,14 @@ Optional config:
 ```bash
 export LOCALTUBE_SQLITE_PATH="/absolute/path/to/localtube.db"
 export LOCALTUBE_THUMBNAIL_CACHE_DIR="/absolute/path/to/.localtube-thumbnails"
+export LOCALTUBE_FRONTEND_DIST_DIR="/absolute/path/to/frontend/dist"
 ```
+
+Defaults when unset:
+
+- `LOCALTUBE_SQLITE_PATH`: `<current working directory>/localtube.db`
+- `LOCALTUBE_THUMBNAIL_CACHE_DIR`: `<current working directory>/.localtube-thumbnails`
+- `LOCALTUBE_FRONTEND_DIST_DIR`: `<current working directory>/../frontend/dist` (resolved from backend process working directory)
 
 ## Development
 
