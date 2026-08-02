@@ -146,55 +146,44 @@ const isFiniteNonNegativeNumber = (value: unknown): value is number => {
 };
 
 const getDatabasePath = (sqlitePath?: string) => {
-  if (sqlitePath) {
-    return sqlitePath;
-  }
-
-  if (process.env.LOCALTUBE_SQLITE_PATH) {
-    return process.env.LOCALTUBE_SQLITE_PATH;
-  }
-
-  return join(process.cwd(), "localtube.db");
+  const source = sqlitePath ? "option" : process.env.LOCALTUBE_SQLITE_PATH ? "env" : "default";
+  const path = sqlitePath ?? process.env.LOCALTUBE_SQLITE_PATH ?? join(process.cwd(), "localtube.db");
+  console.log(`[Config] LOCALTUBE_SQLITE_PATH: "${path}" (from ${source})`);
+  return path;
 };
 
 const getVideoRootDir = (videoRootDir?: string) => {
-  return videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
+  const source = videoRootDir ? "option" : process.env.LOCALTUBE_VIDEO_ROOT ? "env" : "none";
+  const path = videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
+  console.log(`[Config] LOCALTUBE_VIDEO_ROOT: "${path}" (from ${source})`);
+  return path;
 };
 
 export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
+  console.log("[Config] Validating server configuration...");
   const videoRootDir = getVideoRootDir(options.videoRootDir);
   if (!videoRootDir || videoRootDir.trim().length === 0) {
     throw new Error("LOCALTUBE_VIDEO_ROOT must be configured before startup");
   }
 
+  console.log("[Config] Server configuration valid. Ready to start.");
   return {
     videoRootDir,
   };
 };
 
 const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
-  if (thumbnailCacheDir) {
-    return thumbnailCacheDir;
-  }
-
-  if (process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR) {
-    return process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR;
-  }
-
-  return join(process.cwd(), ".localtube-thumbnails");
+  const source = thumbnailCacheDir ? "option" : process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ? "env" : "default";
+  const path = thumbnailCacheDir ?? process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ?? join(process.cwd(), ".localtube-thumbnails");
+  console.log(`[Config] LOCALTUBE_THUMBNAIL_CACHE_DIR: "${path}" (from ${source})`);
+  return path;
 };
 
 const getFrontendDistDir = (frontendDistDir?: string) => {
-  if (frontendDistDir) {
-    return frontendDistDir;
-  }
-
-  if (process.env.LOCALTUBE_FRONTEND_DIST_DIR) {
-    return process.env.LOCALTUBE_FRONTEND_DIST_DIR;
-  }
-
-  // Backend process runs from apps/backend by default.
-  return resolve(process.cwd(), "../frontend/dist");
+  const source = frontendDistDir ? "option" : process.env.LOCALTUBE_FRONTEND_DIST_DIR ? "env" : "default";
+  const path = frontendDistDir ?? process.env.LOCALTUBE_FRONTEND_DIST_DIR ?? resolve(process.cwd(), "../frontend/dist");
+  console.log(`[Config] LOCALTUBE_FRONTEND_DIST_DIR: "${path}" (from ${source})`);
+  return path;
 };
 
 const getContentType = (path: string) => {
@@ -860,7 +849,8 @@ export const buildServer = (options: BuildServerOptions = {}) => {
 };
 
 export const startServer = async (app = buildServer(), port = 3000) => {
+  console.log("[Server] Starting backend on 127.0.0.1...");
   await app.listen({ port, host: "127.0.0.1" });
-  console.log(`LocalTube running → http://localhost:${port}`);
+  console.log(`[Server] LocalTube running → http://localhost:${port}`);
   return app;
 };
