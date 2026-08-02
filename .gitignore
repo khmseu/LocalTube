@@ -1,5 +1,8 @@
 .DS_Store
 *.log
+**/.env
+**/.env.*
+!**/.env.example
 apps/backend/.localtube-thumbnails/
 apps/backend/localtube.db
 coverage/

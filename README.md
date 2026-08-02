@@ -10,7 +10,6 @@ LocalTube is a local-only video catalog and playback app.
 
 - Node.js 20+
 - npm 10+
-- `LOCALTUBE_VIDEO_ROOT` must point to your local video directory
 
 Optional for media enrichment:
 
@@ -23,21 +22,22 @@ Optional for media enrichment:
 npm install
 ```
 
-Set required backend config:
+Create backend environment file from template:
 
 ```bash
-export LOCALTUBE_VIDEO_ROOT="/absolute/path/to/your/videos"
+cp apps/backend/.env.example apps/backend/.env
 ```
 
-Optional config:
+Backend environment variables are loaded from `apps/backend/.env`.
 
-```bash
-export LOCALTUBE_SQLITE_PATH="/absolute/path/to/localtube.db"
-export LOCALTUBE_THUMBNAIL_CACHE_DIR="/absolute/path/to/.localtube-thumbnails"
-export LOCALTUBE_FRONTEND_DIST_DIR="/absolute/path/to/frontend/dist"
-```
+Default template values:
 
-Defaults when unset:
+- `LOCALTUBE_VIDEO_ROOT`: `./videos`
+- `LOCALTUBE_SQLITE_PATH`: `./localtube.db`
+- `LOCALTUBE_THUMBNAIL_CACHE_DIR`: `./.localtube-thumbnails`
+- `LOCALTUBE_FRONTEND_DIST_DIR`: `../frontend/dist`
+
+If optional variables are unset, runtime defaults are:
 
 - `LOCALTUBE_SQLITE_PATH`: `<current working directory>/localtube.db`
 - `LOCALTUBE_THUMBNAIL_CACHE_DIR`: `<current working directory>/.localtube-thumbnails`

@@ -21,5 +21,8 @@
     "start:backend": "npm --workspace @localtube/backend run start",
     "test": "npm run --workspaces --if-present test",
     "typecheck": "npm run --workspaces --if-present typecheck"
+  },
+  "dependencies": {
+    "@e18e/mcp": "^0.0.10"
   }
 }
