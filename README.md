@@ -50,10 +50,18 @@ Run frontend dev server (separate terminal):
 npm run dev:frontend
 ```
 
+Run frontend preview server (development convenience, serves built frontend):
+
+```bash
+npm --workspace @localtube/frontend run preview
+```
+
 Default app URLs:
 
 - Backend: <http://127.0.0.1:3000>
-- Frontend: <http://127.0.0.1:5173>
+- Frontend dev server: <http://127.0.0.1:4173>
+
+If only the backend is running, the app is still available at <http://127.0.0.1:3000> (served by backend).
 
 ## Production Build And Local Run
 
@@ -82,7 +90,7 @@ npm run start:backend
 Run only frontend production preview:
 
 ```bash
-npm run start:frontend
+npm --workspace @localtube/frontend run preview
 ```
 
 ## Tests
