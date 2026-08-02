@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import App from "../src/App.js";
@@ -65,7 +71,9 @@ describe("phase 4 frontend integration", () => {
     await screen.findByRole("heading", { name: "Preview Video" });
 
     const media = document.querySelector(".video-media");
-    const preview = document.querySelector(".video-preview") as HTMLVideoElement | null;
+    const preview = document.querySelector(
+      ".video-preview",
+    ) as HTMLVideoElement | null;
 
     expect(media).not.toBeNull();
     expect(preview).not.toBeNull();
@@ -85,7 +93,10 @@ describe("phase 4 frontend integration", () => {
       expect(playMock).toHaveBeenCalled();
       expect(media).not.toHaveClass("video-media-active");
       expect(preview?.currentTime).toBe(0);
-      expect(preview).toHaveAttribute("src", "/api/videos/video-preview/stream");
+      expect(preview).toHaveAttribute(
+        "src",
+        "/api/videos/video-preview/stream",
+      );
     });
 
     fireEvent.loadedData(preview as HTMLVideoElement);
@@ -165,10 +176,12 @@ describe("phase 4 frontend integration", () => {
 
     render(<App />);
 
-    const media = (await screen.findByText("Hover Click")).closest(".video-card")?.querySelector(
-      ".video-media",
-    );
-    const preview = document.querySelector(".video-preview") as HTMLVideoElement | null;
+    const media = (await screen.findByText("Hover Click"))
+      .closest(".video-card")
+      ?.querySelector(".video-media");
+    const preview = document.querySelector(
+      ".video-preview",
+    ) as HTMLVideoElement | null;
 
     expect(media).not.toBeNull();
     expect(preview).not.toBeNull();
@@ -179,7 +192,9 @@ describe("phase 4 frontend integration", () => {
 
     fireEvent.click(media as Element);
 
-    expect(await screen.findByRole("heading", { name: "Hover Click" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Hover Click" }),
+    ).toBeInTheDocument();
     expect(await screen.findByLabelText("Video player")).toHaveAttribute(
       "src",
       "/api/videos/video-click/stream",
@@ -239,8 +254,7 @@ describe("phase 4 frontend integration", () => {
       name: "Short title",
     });
     const longTitle = screen.getByRole("heading", {
-      name:
-        "A much longer title that would otherwise stretch this card and make the grid jump between pages",
+      name: "A much longer title that would otherwise stretch this card and make the grid jump between pages",
     });
 
     expect(shortTitle).toHaveClass("video-title");
@@ -254,7 +268,7 @@ describe("phase 4 frontend integration", () => {
     expect(longTitle.closest(".video-copy")).not.toBeNull();
     expect(document.querySelectorAll(".video-media")).toHaveLength(2);
     expect(document.querySelectorAll(".video-preview")).toHaveLength(2);
-    expect(document.querySelectorAll('.video-preview[src]')).toHaveLength(0);
+    expect(document.querySelectorAll(".video-preview[src]")).toHaveLength(0);
 
     const appCss = readFileSync(resolve(process.cwd(), "src/App.css"), "utf8");
     expect(appCss).toContain(".video-title {");
@@ -298,25 +312,38 @@ describe("phase 4 frontend integration", () => {
     const nav = screen.getByRole("navigation", { name: "Catalog pagination" });
 
     // First and last pages always visible (totalPages = 10)
-    expect(within(nav).getByRole("button", { name: "Page 1" })).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Page 10" })).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Page 1" }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Page 10" }),
+    ).toBeInTheDocument();
 
     // Window ±2 around page 5: pages 3, 4, 5, 6, 7
-    expect(within(nav).getByRole("button", { name: "Page 3" })).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Page 7" })).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Page 3" }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Page 7" }),
+    ).toBeInTheDocument();
 
     // Pages outside the window are not shown
     expect(within(nav).queryByRole("button", { name: "Page 2" })).toBeNull();
     expect(within(nav).queryByRole("button", { name: "Page 8" })).toBeNull();
 
     // Current page is marked
-    expect(
-      within(nav).getByRole("button", { name: "Page 5" }),
-    ).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("button", { name: "Page 5" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
 
     // Previous / Next present
-    expect(within(nav).getByRole("button", { name: "Previous" })).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Next" })).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Previous" }),
+    ).toBeInTheDocument();
+    expect(
+      within(nav).getByRole("button", { name: "Next" }),
+    ).toBeInTheDocument();
   });
 
   it("browse grid renders paged videos", async () => {

@@ -709,8 +709,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     const row = db
       .prepare("SELECT relative_path, size_bytes FROM videos WHERE id = ?")
       .get(params.id) as
-      | { relative_path: string; size_bytes: number }
-      | undefined;
+      { relative_path: string; size_bytes: number } | undefined;
 
     if (!row) {
       return reply.code(404).send({ error: "Video not found" });
@@ -763,8 +762,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     const row = db
       .prepare("SELECT id, relative_path, mtime_ms FROM videos WHERE id = ?")
       .get(params.id) as
-      | { id: string; relative_path: string; mtime_ms: number }
-      | undefined;
+      { id: string; relative_path: string; mtime_ms: number } | undefined;
 
     if (!row) {
       return reply.code(404).send({ error: "Video not found" });
@@ -815,7 +813,8 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     const requestedPath = normalized.length > 0 ? normalized : "index.html";
     const absolutePath = resolve(frontendRoot, requestedPath);
     const isUnderFrontendRoot =
-      absolutePath === frontendRoot || absolutePath.startsWith(`${frontendRoot}/`);
+      absolutePath === frontendRoot ||
+      absolutePath.startsWith(`${frontendRoot}/`);
 
     if (!isUnderFrontendRoot) {
       return reply.code(403).send({ error: "Forbidden" });
@@ -832,9 +831,9 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     } catch {
       const indexInfo = await stat(frontendIndexPath);
       if (!indexInfo.isFile()) {
-        return reply
-          .code(503)
-          .send({ error: "Frontend build is unavailable. Run npm run build first." });
+        return reply.code(503).send({
+          error: "Frontend build is unavailable. Run npm run build first.",
+        });
       }
 
       reply.header("content-type", "text/html; charset=utf-8");

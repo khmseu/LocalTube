@@ -505,9 +505,7 @@ const App = () => {
                         }
                         disabled={item === route.page}
                         aria-label={`Page ${item}`}
-                        aria-current={
-                          item === route.page ? "page" : undefined
-                        }
+                        aria-current={item === route.page ? "page" : undefined}
                       >
                         {item}
                       </button>
@@ -540,7 +538,9 @@ const App = () => {
               type="button"
               className="back-link"
               onClick={() =>
-                navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+                navigate(
+                  toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE),
+                )
               }
             >
               Back to Browse

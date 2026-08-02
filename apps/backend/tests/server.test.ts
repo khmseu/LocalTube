@@ -460,12 +460,9 @@ describe("phase 2 indexing and catalog APIs", () => {
       remoteAddress: "127.0.0.1",
     });
     expect(runtime.statusCode).toBe(200);
-    expect(runtime.json().items.map((item: { title: string }) => item.title)).toEqual([
-      "Longest",
-      "Alpha Tie",
-      "Beta Tie",
-      "Unknown",
-    ]);
+    expect(
+      runtime.json().items.map((item: { title: string }) => item.title),
+    ).toEqual(["Longest", "Alpha Tie", "Beta Tie", "Unknown"]);
   });
 });
 
