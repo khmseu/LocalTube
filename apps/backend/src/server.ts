@@ -4,10 +4,30 @@ import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { access, mkdir, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 import { openDatabase, type ResumeRow, type VideoRow } from "./db.js";
 import { scanVideoDirectory } from "./video-indexer.js";
+
+const expandPath = (path: string): string => {
+  if (!path) return path;
+  
+  let expanded = path;
+  
+  // Expand ~ to home directory
+  if (expanded.startsWith("~")) {
+    expanded = expanded.replace(/^~/, homedir());
+  }
+  
+  // Expand environment variables $VAR_NAME or ${VAR_NAME}
+  expanded = expanded.replace(/\$\{([^}]+)\}|\$([A-Z_][A-Z0-9_]*)/gi, (match, braced, unbraced) => {
+    const varName = braced ?? unbraced;
+    return process.env[varName] ?? match;
+  });
+  
+  return expanded;
+};
 
 const isLoopbackAddress = (address: string) => {
   return (
@@ -147,14 +167,16 @@ const isFiniteNonNegativeNumber = (value: unknown): value is number => {
 
 const getDatabasePath = (sqlitePath?: string) => {
   const source = sqlitePath ? "option" : process.env.LOCALTUBE_SQLITE_PATH ? "env" : "default";
-  const path = sqlitePath ?? process.env.LOCALTUBE_SQLITE_PATH ?? join(process.cwd(), "localtube.db");
+  const raw = sqlitePath ?? process.env.LOCALTUBE_SQLITE_PATH ?? join(process.cwd(), "localtube.db");
+  const path = expandPath(raw);
   console.log(`[Config] LOCALTUBE_SQLITE_PATH: "${path}" (from ${source})`);
   return path;
 };
 
 const getVideoRootDir = (videoRootDir?: string) => {
   const source = videoRootDir ? "option" : process.env.LOCALTUBE_VIDEO_ROOT ? "env" : "none";
-  const path = videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
+  const raw = videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
+  const path = raw ? expandPath(raw) : raw;
   console.log(`[Config] LOCALTUBE_VIDEO_ROOT: "${path}" (from ${source})`);
   return path;
 };
@@ -174,14 +196,16 @@ export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
 
 const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
   const source = thumbnailCacheDir ? "option" : process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ? "env" : "default";
-  const path = thumbnailCacheDir ?? process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ?? join(process.cwd(), ".localtube-thumbnails");
+  const raw = thumbnailCacheDir ?? process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ?? join(process.cwd(), ".localtube-thumbnails");
+  const path = expandPath(raw);
   console.log(`[Config] LOCALTUBE_THUMBNAIL_CACHE_DIR: "${path}" (from ${source})`);
   return path;
 };
 
 const getFrontendDistDir = (frontendDistDir?: string) => {
   const source = frontendDistDir ? "option" : process.env.LOCALTUBE_FRONTEND_DIST_DIR ? "env" : "default";
-  const path = frontendDistDir ?? process.env.LOCALTUBE_FRONTEND_DIST_DIR ?? resolve(process.cwd(), "../frontend/dist");
+  const raw = frontendDistDir ?? process.env.LOCALTUBE_FRONTEND_DIST_DIR ?? resolve(process.cwd(), "../frontend/dist");
+  const path = expandPath(raw);
   console.log(`[Config] LOCALTUBE_FRONTEND_DIST_DIR: "${path}" (from ${source})`);
   return path;
 };
