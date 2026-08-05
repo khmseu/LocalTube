@@ -56,6 +56,7 @@ const isAllowedOrigin = (originHeader: string) => {
 };
 
 type BuildServerOptions = {
+  videoRootDirs?: string[];
   videoRootDir?: string;
   sqlitePath?: string;
   thumbnailCacheDir?: string;
@@ -66,6 +67,7 @@ type BuildServerOptions = {
 type CatalogSortMode = "alphabetical" | "runtime";
 
 type ConfigValidationOptions = {
+  videoRootDirs?: string[];
   videoRootDir?: string;
 };
 
@@ -145,12 +147,17 @@ const isFiniteNonNegativeNumber = (value: unknown): value is number => {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 };
 
+type ConfigSource = "option" | "env" | "default" | "none";
+
 const getDatabasePath = (sqlitePath?: string) => {
-  const source = sqlitePath
-    ? "option"
-    : process.env.LOCALTUBE_SQLITE_PATH
-      ? "env"
-      : "default";
+  let source: ConfigSource;
+  if (sqlitePath) {
+    source = "option";
+  } else if (process.env.LOCALTUBE_SQLITE_PATH) {
+    source = "env";
+  } else {
+    source = "default";
+  }
   const path =
     sqlitePath ??
     process.env.LOCALTUBE_SQLITE_PATH ??
@@ -159,36 +166,63 @@ const getDatabasePath = (sqlitePath?: string) => {
   return path;
 };
 
-const getVideoRootDir = (videoRootDir?: string) => {
-  const source = videoRootDir
-    ? "option"
-    : process.env.LOCALTUBE_VIDEO_ROOT
-      ? "env"
-      : "none";
-  const path = videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT;
-  console.log(`[Config] LOCALTUBE_VIDEO_ROOT: "${path}" (from ${source})`);
-  return path;
+const parseVideoRootDirs = (value: string | undefined) => {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(/[,;]/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
+const getVideoRootDirs = (videoRootDirs?: string[], videoRootDir?: string) => {
+  let source: ConfigSource;
+  const optionValue = videoRootDirs ?? [];
+  if (optionValue.length > 0) {
+    source = "option";
+  } else if (videoRootDir) {
+    source = "option";
+  } else if (process.env.LOCALTUBE_VIDEO_ROOTS) {
+    source = "env";
+  } else if (process.env.LOCALTUBE_VIDEO_ROOT) {
+    source = "env";
+  } else {
+    source = "none";
+  }
+
+  const parsed = optionValue.length > 0
+    ? optionValue
+    : parseVideoRootDirs(process.env.LOCALTUBE_VIDEO_ROOTS ?? videoRootDir ?? process.env.LOCALTUBE_VIDEO_ROOT);
+
+  const pathValue = parsed.length > 0 ? parsed.join(",") : undefined;
+  console.log(`[Config] LOCALTUBE_VIDEO_ROOTS: "${pathValue}" (from ${source})`);
+  return parsed;
 };
 
 export const validateServerConfig = (options: ConfigValidationOptions = {}) => {
   console.log("[Config] Validating server configuration...");
-  const videoRootDir = getVideoRootDir(options.videoRootDir);
-  if (!videoRootDir || videoRootDir.trim().length === 0) {
-    throw new Error("LOCALTUBE_VIDEO_ROOT must be configured before startup");
+  const videoRootDirs = getVideoRootDirs(options.videoRootDirs, options.videoRootDir);
+  if (videoRootDirs.length === 0) {
+    throw new Error("LOCALTUBE_VIDEO_ROOTS must be configured before startup");
   }
 
   console.log("[Config] Server configuration valid. Ready to start.");
   return {
-    videoRootDir,
+    videoRootDirs,
   };
 };
 
 const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
-  const source = thumbnailCacheDir
-    ? "option"
-    : process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR
-      ? "env"
-      : "default";
+  let source: ConfigSource;
+  if (thumbnailCacheDir) {
+    source = "option";
+  } else if (process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR) {
+    source = "env";
+  } else {
+    source = "default";
+  }
   const path =
     thumbnailCacheDir ??
     process.env.LOCALTUBE_THUMBNAIL_CACHE_DIR ??
@@ -200,11 +234,14 @@ const getThumbnailCacheDir = (thumbnailCacheDir?: string) => {
 };
 
 const getFrontendDistDir = (frontendDistDir?: string) => {
-  const source = frontendDistDir
-    ? "option"
-    : process.env.LOCALTUBE_FRONTEND_DIST_DIR
-      ? "env"
-      : "default";
+  let source: ConfigSource;
+  if (frontendDistDir) {
+    source = "option";
+  } else if (process.env.LOCALTUBE_FRONTEND_DIST_DIR) {
+    source = "env";
+  } else {
+    source = "default";
+  }
   const path =
     frontendDistDir ??
     process.env.LOCALTUBE_FRONTEND_DIST_DIR ??
@@ -411,26 +448,47 @@ const upsertResume = (
 
 const rescanIntoDatabase = async (
   db: Database.Database,
-  videoRootDir: string,
+  videoRootDirs: string[],
   runMediaCommand: MediaCommandRunner,
 ) => {
-  const discovered = await scanVideoDirectory(videoRootDir);
+  const discovered: Array<{
+    id: string;
+    sourceRoot: string;
+    relativePath: string;
+    title: string;
+    mtimeMs: number;
+    sizeBytes: number;
+  }> = [];
+  for (const videoRootDir of videoRootDirs) {
+    const rootDiscovered = await scanVideoDirectory(videoRootDir);
+    discovered.push(
+      ...rootDiscovered.map((item) => ({
+        ...item,
+        sourceRoot: videoRootDir,
+      })),
+    );
+  }
+
+  discovered.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   const indexedAt = new Date().toISOString();
   const existingRows = db
-    .prepare("SELECT relative_path FROM videos")
+    .prepare("SELECT source_root, relative_path FROM videos")
     .all() as Array<{
+    source_root: string;
     relative_path: string;
   }>;
-  const existingPaths = new Set(existingRows.map((row) => row.relative_path));
+  const existingPaths = new Set(
+    existingRows.map((row) => `${row.source_root}:${row.relative_path}`),
+  );
 
   // Probe metadata for all discovered videos first, before transaction
   const metadataByPath = new Map<string, VideoMetadata | null>();
   for (const item of discovered) {
     const metadata = await probeVideoMetadata(
       runMediaCommand,
-      join(videoRootDir, item.relativePath),
+      join(item.sourceRoot, item.relativePath),
     );
-    metadataByPath.set(item.relativePath, metadata);
+    metadataByPath.set(`${item.sourceRoot}:${item.relativePath}`, metadata);
   }
 
   let inserted = 0;
@@ -440,6 +498,7 @@ const rescanIntoDatabase = async (
     `
       INSERT INTO videos (
         id,
+        source_root,
         relative_path,
         title,
         mtime_ms,
@@ -454,6 +513,7 @@ const rescanIntoDatabase = async (
         last_indexed_at
       ) VALUES (
         @id,
+        @source_root,
         @relative_path,
         @title,
         @mtime_ms,
@@ -467,7 +527,8 @@ const rescanIntoDatabase = async (
         @updated_at,
         @last_indexed_at
       )
-      ON CONFLICT(relative_path) DO UPDATE SET
+      ON CONFLICT(id) DO UPDATE SET
+        source_root = excluded.source_root,
         title = excluded.title,
         mtime_ms = excluded.mtime_ms,
         size_bytes = excluded.size_bytes,
@@ -483,10 +544,12 @@ const rescanIntoDatabase = async (
 
   const transaction = db.transaction(() => {
     for (const item of discovered) {
-      const isExisting = existingPaths.has(item.relativePath);
-      const metadata = metadataByPath.get(item.relativePath) ?? null;
+      const identity = `${item.sourceRoot}:${item.relativePath}`;
+      const isExisting = existingPaths.has(identity);
+      const metadata = metadataByPath.get(identity) ?? null;
       const payload = {
         id: item.id,
+        source_root: item.sourceRoot,
         relative_path: item.relativePath,
         title: item.title,
         mtime_ms: item.mtimeMs,
@@ -510,11 +573,15 @@ const rescanIntoDatabase = async (
       }
     }
 
-    const deleteResult = db
-      .prepare("DELETE FROM videos WHERE last_indexed_at != ?")
-      .run(indexedAt);
+    let deleted = 0;
+    for (const videoRootDir of videoRootDirs) {
+      const deleteResult = db
+        .prepare("DELETE FROM videos WHERE source_root = ? AND last_indexed_at != ?")
+        .run(videoRootDir, indexedAt);
+      deleted += Number(deleteResult.changes);
+    }
 
-    return Number(deleteResult.changes);
+    return deleted;
   });
 
   const deleted = transaction();
@@ -530,7 +597,7 @@ const rescanIntoDatabase = async (
 export const buildServer = (options: BuildServerOptions = {}) => {
   const app = Fastify({ logger: false });
   const db = openDatabase(getDatabasePath(options.sqlitePath));
-  const videoRootDir = getVideoRootDir(options.videoRootDir);
+  const videoRootDirs = getVideoRootDirs(options.videoRootDirs, options.videoRootDir);
   const thumbnailCacheDir = getThumbnailCacheDir(options.thumbnailCacheDir);
   const frontendDistDir = getFrontendDistDir(options.frontendDistDir);
   const frontendRoot = resolve(frontendDistDir);
@@ -564,6 +631,8 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       }
     }
   });
+
+  app.decorate("videoRootDirs", videoRootDirs);
 
   app.addHook("onClose", async () => {
     db.close();
@@ -634,16 +703,16 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   });
 
   app.post("/api/index/rescan", async (_request, reply) => {
-    if (!videoRootDir) {
+    if (videoRootDirs.length === 0) {
       return reply
         .code(400)
-        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
+        .send({ error: "LOCALTUBE_VIDEO_ROOTS is not configured" });
     }
 
     try {
       const result = await rescanIntoDatabase(
         db,
-        videoRootDir,
+        videoRootDirs,
         runMediaCommand,
       );
       return reply.code(200).send(result);
@@ -717,23 +786,23 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   });
 
   app.get("/api/videos/:id/stream", async (request, reply) => {
-    if (!videoRootDir) {
+    if (videoRootDirs.length === 0) {
       return reply
         .code(400)
-        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
+        .send({ error: "LOCALTUBE_VIDEO_ROOTS is not configured" });
     }
 
     const params = request.params as { id: string };
     const row = db
-      .prepare("SELECT relative_path, size_bytes FROM videos WHERE id = ?")
+      .prepare("SELECT source_root, relative_path, size_bytes FROM videos WHERE id = ?")
       .get(params.id) as
-      { relative_path: string; size_bytes: number } | undefined;
+      { source_root: string; relative_path: string; size_bytes: number } | undefined;
 
     if (!row) {
       return reply.code(404).send({ error: "Video not found" });
     }
 
-    const absolutePath = join(videoRootDir, row.relative_path);
+    const absolutePath = join(row.source_root, row.relative_path);
     const rangeHeader = request.headers.range;
 
     if (!rangeHeader || typeof rangeHeader !== "string") {
@@ -770,17 +839,17 @@ export const buildServer = (options: BuildServerOptions = {}) => {
   });
 
   app.get("/api/videos/:id/thumbnail", async (request, reply) => {
-    if (!videoRootDir) {
+    if (videoRootDirs.length === 0) {
       return reply
         .code(400)
-        .send({ error: "LOCALTUBE_VIDEO_ROOT is not configured" });
+        .send({ error: "LOCALTUBE_VIDEO_ROOTS is not configured" });
     }
 
     const params = request.params as { id: string };
     const row = db
-      .prepare("SELECT id, relative_path, mtime_ms FROM videos WHERE id = ?")
+      .prepare("SELECT id, source_root, relative_path, mtime_ms FROM videos WHERE id = ?")
       .get(params.id) as
-      { id: string; relative_path: string; mtime_ms: number } | undefined;
+      { id: string; source_root: string; relative_path: string; mtime_ms: number } | undefined;
 
     if (!row) {
       return reply.code(404).send({ error: "Video not found" });
@@ -798,7 +867,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       reply.header("content-type", "image/jpeg");
       return reply.send(createReadStream(thumbnailPath));
     } catch {
-      const sourcePath = join(videoRootDir, row.relative_path);
+      const sourcePath = join(row.source_root, row.relative_path);
       const ffmpegResult = await runMediaCommand("ffmpeg", [
         "-y",
         "-i",

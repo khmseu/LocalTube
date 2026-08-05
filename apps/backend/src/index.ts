@@ -17,5 +17,5 @@ for (const [key, value] of Object.entries(parsed)) {
 
 Object.assign(process.env, parsed);
 
-const { videoRootDir } = validateServerConfig();
-await startServer(buildServer({ videoRootDir }));
+const { videoRootDirs } = validateServerConfig();
+await startServer(buildServer({ videoRootDirs }));

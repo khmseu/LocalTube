@@ -17,6 +17,7 @@ const VIDEO_EXTENSIONS = new Set([
 
 export type DiscoveredVideo = {
   id: string;
+  sourceRoot: string;
   relativePath: string;
   title: string;
   mtimeMs: number;
@@ -25,8 +26,8 @@ export type DiscoveredVideo = {
 
 const toPosixPath = (value: string) => value.split("\\").join("/");
 
-const stableVideoId = (relativePath: string) => {
-  return createHash("sha256").update(relativePath).digest("hex");
+const stableVideoId = (sourceRoot: string, relativePath: string) => {
+  return createHash("sha256").update(`${sourceRoot}:${relativePath}`).digest("hex");
 };
 
 const walk = async (
@@ -57,7 +58,8 @@ const walk = async (
     const relativePath = toPosixPath(relative(rootDir, fullPath));
 
     acc.push({
-      id: stableVideoId(relativePath),
+      id: stableVideoId(rootDir, relativePath),
+      sourceRoot: rootDir,
       relativePath,
       title: parse(entry.name).name,
       mtimeMs: Math.trunc(fileStats.mtimeMs),

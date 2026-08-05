@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 
 export type VideoRow = {
   id: string;
+  source_root: string;
   relative_path: string;
   title: string;
   mtime_ms: number;
@@ -27,7 +28,8 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS videos (
   id TEXT PRIMARY KEY,
-  relative_path TEXT NOT NULL UNIQUE,
+  source_root TEXT NOT NULL,
+  relative_path TEXT NOT NULL,
   title TEXT NOT NULL,
   mtime_ms INTEGER NOT NULL,
   size_bytes INTEGER NOT NULL,
@@ -41,6 +43,7 @@ CREATE TABLE IF NOT EXISTS videos (
   last_indexed_at TEXT NOT NULL
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_source_relative_path ON videos(source_root, relative_path);
 CREATE INDEX IF NOT EXISTS idx_videos_title ON videos(title);
 CREATE INDEX IF NOT EXISTS idx_videos_updated_at ON videos(updated_at);
 
@@ -51,6 +54,75 @@ CREATE TABLE IF NOT EXISTS resume_progress (
   FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
 );
 `;
+
+const migrateVideosSchema = (db: Database.Database) => {
+  const columns = db.prepare("PRAGMA table_info(videos)").all() as Array<{
+    name: string;
+  }>;
+  const names = new Set(columns.map((column) => column.name));
+
+  if (names.has("source_root")) {
+    return;
+  }
+
+  db.pragma("foreign_keys = OFF");
+  db.exec("ALTER TABLE videos RENAME TO videos_legacy");
+  db.exec(`
+    CREATE TABLE videos (
+      id TEXT PRIMARY KEY,
+      source_root TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      title TEXT NOT NULL,
+      mtime_ms INTEGER NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      duration_seconds REAL,
+      width INTEGER,
+      height INTEGER,
+      codec_name TEXT,
+      format_name TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_indexed_at TEXT NOT NULL
+    )
+  `);
+  db.exec(`
+    INSERT INTO videos (
+      id,
+      source_root,
+      relative_path,
+      title,
+      mtime_ms,
+      size_bytes,
+      duration_seconds,
+      width,
+      height,
+      codec_name,
+      format_name,
+      created_at,
+      updated_at,
+      last_indexed_at
+    )
+    SELECT
+      id,
+      '',
+      relative_path,
+      title,
+      mtime_ms,
+      size_bytes,
+      duration_seconds,
+      width,
+      height,
+      codec_name,
+      format_name,
+      created_at,
+      updated_at,
+      last_indexed_at
+    FROM videos_legacy
+  `);
+  db.exec("DROP TABLE videos_legacy");
+  db.exec("CREATE UNIQUE INDEX idx_videos_source_relative_path ON videos(source_root, relative_path)");
+  db.pragma("foreign_keys = ON");
+};
 
 const ensureVideoMetadataColumns = (db: Database.Database) => {
   const columns = db.prepare("PRAGMA table_info(videos)").all() as Array<{
@@ -79,6 +151,7 @@ export const openDatabase = (sqlitePath: string) => {
   const db = new Database(sqlitePath);
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
+  migrateVideosSchema(db);
   ensureVideoMetadataColumns(db);
   return db;
 };

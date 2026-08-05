@@ -149,8 +149,24 @@ describe("backend localhost-only behavior", () => {
 
   it("config validation rejects missing video dir", () => {
     expect(() => validateServerConfig({})).toThrowError(
-      "LOCALTUBE_VIDEO_ROOT must be configured before startup",
+      "LOCALTUBE_VIDEO_ROOTS must be configured before startup",
     );
+  });
+
+  it("config validation accepts multiple video roots from env", () => {
+    const previousValue = process.env.LOCALTUBE_VIDEO_ROOTS;
+    process.env.LOCALTUBE_VIDEO_ROOTS = "/tmp/one,/tmp/two";
+
+    try {
+      const config = validateServerConfig();
+      expect(config.videoRootDirs).toEqual(["/tmp/one", "/tmp/two"]);
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.LOCALTUBE_VIDEO_ROOTS;
+      } else {
+        process.env.LOCALTUBE_VIDEO_ROOTS = previousValue;
+      }
+    }
   });
 });
 
