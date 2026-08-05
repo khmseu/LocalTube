@@ -610,4 +610,39 @@ describe("phase 4 frontend integration", () => {
       );
     });
   });
+
+  it("navigates to admin page and triggers rescan", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/videos?") && (!init || !init.method)) {
+          return jsonResponse({ page: 1, pageSize: 12, total: 0, items: [] });
+        }
+
+        if (url.endsWith("/api/index/rescan") && init?.method === "POST") {
+          return jsonResponse({ inserted: 2, updated: 1, deleted: 0 });
+        }
+
+        return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Admin" }));
+    expect(await screen.findByRole("heading", { name: "Admin" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/admin");
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescan Library" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/index/rescan", {
+        method: "POST",
+      });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Rescan complete: 2 inserted, 1 updated, 0 deleted.",
+      );
+    });
+  });
 });

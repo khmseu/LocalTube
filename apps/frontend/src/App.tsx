@@ -37,7 +37,11 @@ type WatchRoute = {
   id: string;
 };
 
-type AppRoute = BrowseRoute | WatchRoute;
+type AdminRoute = {
+  kind: "admin";
+};
+
+type AppRoute = BrowseRoute | WatchRoute | AdminRoute;
 
 type CatalogSortMode = "alphabetical" | "runtime";
 
@@ -57,6 +61,10 @@ const readPositiveNumber = (value: string | null, fallback: number): number => {
 
 const getRouteFromLocation = (): AppRoute => {
   const path = window.location.pathname;
+  if (path === "/admin") {
+    return { kind: "admin" };
+  }
+
   if (path.startsWith("/watch/")) {
     const id = decodeURIComponent(path.replace("/watch/", "").trim());
     if (id.length > 0) {
@@ -135,6 +143,8 @@ const App = () => {
   const [watchVideo, setWatchVideo] = useState<VideoDetail | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [resumePosition, setResumePosition] = useState<number>(0);
+  const [rescanStatus, setRescanStatus] = useState<string | null>(null);
+  const [isRescanning, setIsRescanning] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRefs = useRef(new Map<string, HTMLVideoElement>());
@@ -282,6 +292,31 @@ const App = () => {
     navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
   };
 
+  const triggerRescan = async () => {
+    setIsRescanning(true);
+    setRescanStatus(null);
+
+    try {
+      const response = await fetch("/api/index/rescan", { method: "POST" });
+      if (!response.ok) {
+        throw new Error("Unable to rescan index");
+      }
+
+      const result = (await response.json()) as {
+        inserted: number;
+        updated: number;
+        deleted: number;
+      };
+      setRescanStatus(
+        `Rescan complete: ${result.inserted} inserted, ${result.updated} updated, ${result.deleted} deleted.`,
+      );
+    } catch {
+      setRescanStatus("Rescan failed. Check backend logs and try again.");
+    } finally {
+      setIsRescanning(false);
+    }
+  };
+
   const changeSortMode = (nextSort: CatalogSortMode) => {
     if (route.kind !== "browse") {
       return;
@@ -382,6 +417,13 @@ const App = () => {
           />
           <button type="submit">Search</button>
         </form>
+        <button
+          type="button"
+          className="admin-link"
+          onClick={() => navigate("/admin")}
+        >
+          Admin
+        </button>
       </header>
 
       <main>
@@ -532,7 +574,7 @@ const App = () => {
               </>
             )}
           </section>
-        ) : (
+        ) : route.kind === "watch" ? (
           <section className="watch-layout" aria-label="Watch video">
             <button
               type="button"
@@ -560,6 +602,20 @@ const App = () => {
                 />
               </>
             )}
+          </section>
+        ) : (
+          <section className="admin-layout" aria-label="Admin">
+            <h1>Admin</h1>
+            <p>Manage the local video index.</p>
+            <button
+              type="button"
+              className="admin-rescan"
+              onClick={() => void triggerRescan()}
+              disabled={isRescanning}
+            >
+              {isRescanning ? "Rescanning..." : "Rescan Library"}
+            </button>
+            {rescanStatus ? <p role="status">{rescanStatus}</p> : null}
           </section>
         )}
       </main>
