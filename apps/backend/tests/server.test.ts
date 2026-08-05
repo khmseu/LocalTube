@@ -155,7 +155,9 @@ describe("backend localhost-only behavior", () => {
 
   it("config validation accepts multiple video roots from env", () => {
     const previousValue = process.env.LOCALTUBE_VIDEO_ROOTS;
+    const previousLegacyValue = process.env.LOCALTUBE_VIDEO_ROOT;
     process.env.LOCALTUBE_VIDEO_ROOTS = "/tmp/one,/tmp/two";
+    delete process.env.LOCALTUBE_VIDEO_ROOT;
 
     try {
       const config = validateServerConfig();
@@ -165,6 +167,37 @@ describe("backend localhost-only behavior", () => {
         delete process.env.LOCALTUBE_VIDEO_ROOTS;
       } else {
         process.env.LOCALTUBE_VIDEO_ROOTS = previousValue;
+      }
+
+      if (previousLegacyValue === undefined) {
+        delete process.env.LOCALTUBE_VIDEO_ROOT;
+      } else {
+        process.env.LOCALTUBE_VIDEO_ROOT = previousLegacyValue;
+      }
+    }
+  });
+
+  it("config validation rejects legacy single-root env", () => {
+    const previousValue = process.env.LOCALTUBE_VIDEO_ROOTS;
+    const previousLegacyValue = process.env.LOCALTUBE_VIDEO_ROOT;
+    delete process.env.LOCALTUBE_VIDEO_ROOTS;
+    process.env.LOCALTUBE_VIDEO_ROOT = "/tmp/legacy";
+
+    try {
+      expect(() => validateServerConfig({})).toThrowError(
+        "LOCALTUBE_VIDEO_ROOTS must be configured before startup",
+      );
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.LOCALTUBE_VIDEO_ROOTS;
+      } else {
+        process.env.LOCALTUBE_VIDEO_ROOTS = previousValue;
+      }
+
+      if (previousLegacyValue === undefined) {
+        delete process.env.LOCALTUBE_VIDEO_ROOT;
+      } else {
+        process.env.LOCALTUBE_VIDEO_ROOT = previousLegacyValue;
       }
     }
   });
