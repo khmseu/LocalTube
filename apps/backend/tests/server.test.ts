@@ -205,6 +205,37 @@ describe("phase 2 indexing and catalog APIs", () => {
     expect(listResponse.json().items).toHaveLength(2);
   });
 
+  it("rescan indexes videos from multiple roots", async () => {
+    const rootDirOne = await createVideoRoot();
+    const rootDirTwo = await createVideoRoot();
+    await writeVideo(rootDirOne, "shared/movie.mp4", "video-one");
+    await writeVideo(rootDirTwo, "shared/movie.mp4", "video-two");
+
+    const app = buildServer({
+      videoRootDirs: [rootDirOne, rootDirTwo],
+      sqlitePath: join(rootDirOne, "catalog.db"),
+    });
+
+    const indexResponse = await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(indexResponse.statusCode).toBe(200);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=10",
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().total).toBe(2);
+    expect(listResponse.json().items).toHaveLength(2);
+  });
+
   it("rescan updates and deletes stale entries", async () => {
     const rootDir = await createVideoRoot();
     await writeVideo(rootDir, "keep.mp4", "initial");

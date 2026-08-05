@@ -32,7 +32,7 @@ Backend environment variables are loaded from `apps/backend/.env`.
 
 Default template values:
 
-- `LOCALTUBE_VIDEO_ROOT`: `./videos`
+- `LOCALTUBE_VIDEO_ROOTS`: `./videos` or `./videos,~/Videos`
 - `LOCALTUBE_SQLITE_PATH`: `./localtube.db`
 - `LOCALTUBE_THUMBNAIL_CACHE_DIR`: `./.localtube-thumbnails`
 - `LOCALTUBE_FRONTEND_DIST_DIR`: `../frontend/dist`
