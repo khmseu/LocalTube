@@ -612,11 +612,25 @@ describe("phase 4 frontend integration", () => {
   });
 
   it("navigates to admin page and triggers rescan", async () => {
+    let rootSummaryCallCount = 0;
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.includes("/api/videos?") && (!init || !init.method)) {
           return jsonResponse({ page: 1, pageSize: 12, total: 0, items: [] });
+        }
+
+        if (url.endsWith("/api/index/roots") && (!init || init.method === "GET")) {
+          rootSummaryCallCount += 1;
+          if (rootSummaryCallCount === 1) {
+            return jsonResponse({
+              items: [{ root: "/videos/library", videoCount: 3 }],
+            });
+          }
+
+          return jsonResponse({
+            items: [{ root: "/videos/library", videoCount: 5 }],
+          });
         }
 
         if (url.endsWith("/api/index/rescan") && init?.method === "POST") {
@@ -634,6 +648,18 @@ describe("phase 4 frontend integration", () => {
     expect(await screen.findByRole("heading", { name: "Admin" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/admin");
 
+    const rootSummaryRegion = screen.getByRole("region", {
+      name: "Roots and videos per root",
+    });
+    const rootCell = await within(rootSummaryRegion).findByRole("cell", {
+      name: "/videos/library",
+    });
+    const initialRow = rootCell.closest("tr");
+    expect(initialRow).not.toBeNull();
+    expect(
+      within(initialRow as HTMLElement).getByRole("cell", { name: "3" }),
+    ).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Rescan Library" }));
 
     await waitFor(() => {
@@ -643,6 +669,15 @@ describe("phase 4 frontend integration", () => {
       expect(screen.getByRole("status")).toHaveTextContent(
         "Rescan complete: 2 inserted, 1 updated, 0 deleted.",
       );
+
+      const updatedRootCell = within(rootSummaryRegion).getByRole("cell", {
+        name: "/videos/library",
+      });
+      const updatedRow = updatedRootCell.closest("tr");
+      expect(updatedRow).not.toBeNull();
+      expect(
+        within(updatedRow as HTMLElement).getByRole("cell", { name: "5" }),
+      ).toBeInTheDocument();
     });
   });
 });

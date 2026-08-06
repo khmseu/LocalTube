@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import type {
+  RootVideoCount,
+  RootVideoCountResponse,
+} from "../../shared/src/api-types.js";
 import "./App.css";
 
 type VideoItem = {
@@ -130,6 +134,23 @@ const getPaginationItems = (
   return items;
 };
 
+const hasErrorName = (value: unknown): value is { name: string } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof (value as { name?: unknown }).name === "string"
+  );
+};
+
+const isAbortError = (error: unknown) => {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  return hasErrorName(error) && error.name === "AbortError";
+};
+
 const App = () => {
   const [route, setRoute] = useState<AppRoute>(() => getRouteFromLocation());
   const [browse, setBrowse] = useState<VideoListResponse | null>(null);
@@ -145,6 +166,9 @@ const App = () => {
   const [resumePosition, setResumePosition] = useState<number>(0);
   const [rescanStatus, setRescanStatus] = useState<string | null>(null);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [rootCounts, setRootCounts] = useState<RootVideoCount[]>([]);
+  const [isLoadingRootCounts, setIsLoadingRootCounts] = useState(false);
+  const [rootCountsError, setRootCountsError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRefs = useRef(new Map<string, HTMLVideoElement>());
@@ -208,7 +232,7 @@ const App = () => {
         setBrowse(data);
       })
       .catch((error: unknown) => {
-        if ((error as Error).name === "AbortError") {
+        if (isAbortError(error)) {
           return;
         }
         setBrowseError("Could not load video catalog.");
@@ -250,7 +274,7 @@ const App = () => {
     };
 
     loadWatchData().catch((error: unknown) => {
-      if ((error as Error).name === "AbortError") {
+      if (isAbortError(error)) {
         return;
       }
       setWatchError("Could not load this video.");
@@ -292,6 +316,62 @@ const App = () => {
     navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
   };
 
+  const loadRootCounts = useCallback(async (signal?: AbortSignal) => {
+    setIsLoadingRootCounts(true);
+    setRootCountsError(null);
+
+    try {
+      const response = await fetch("/api/index/roots", {
+        method: "GET",
+        signal,
+      });
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") ?? "";
+        let detail = "";
+
+        if (contentType.includes("application/json")) {
+          const payload = (await response.json()) as { error?: string };
+          detail = payload.error ?? "";
+        } else {
+          detail = (await response.text()).trim();
+        }
+
+        const suffix = detail.length > 0 ? `: ${detail}` : "";
+        throw new Error(
+          `Could not load roots and video counts (HTTP ${response.status})${suffix}`,
+        );
+      }
+
+      const data = (await response.json()) as RootVideoCountResponse;
+      setRootCounts(data.items);
+    } catch (error: unknown) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setRootCountsError(
+        error instanceof Error
+          ? error.message
+          : "Could not load roots and video counts.",
+      );
+    } finally {
+      setIsLoadingRootCounts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (route.kind !== "admin") {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadRootCounts(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [route.kind, loadRootCounts]);
+
   const triggerRescan = async () => {
     setIsRescanning(true);
     setRescanStatus(null);
@@ -307,6 +387,7 @@ const App = () => {
         updated: number;
         deleted: number;
       };
+      await loadRootCounts();
       setRescanStatus(
         `Rescan complete: ${result.inserted} inserted, ${result.updated} updated, ${result.deleted} deleted.`,
       );
@@ -616,6 +697,32 @@ const App = () => {
               {isRescanning ? "Rescanning..." : "Rescan Library"}
             </button>
             {rescanStatus ? <p role="status">{rescanStatus}</p> : null}
+            <section aria-label="Roots and videos per root" className="admin-root-summary">
+              <h2>Roots and videos per root</h2>
+              {rootCountsError ? <p role="alert">{rootCountsError}</p> : null}
+              {isLoadingRootCounts ? (
+                <p>Loading root summary...</p>
+              ) : rootCounts.length === 0 ? (
+                <p>No configured roots found.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">Root</th>
+                      <th scope="col">Videos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rootCounts.map((item) => (
+                      <tr key={item.root}>
+                        <td>{item.root}</td>
+                        <td>{item.videoCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </section>
           </section>
         )}
       </main>

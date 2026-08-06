@@ -269,6 +269,89 @@ describe("phase 2 indexing and catalog APIs", () => {
     expect(listResponse.json().items).toHaveLength(2);
   });
 
+  it("returns configured roots with per-root video counts", async () => {
+    const rootDirOne = await createVideoRoot();
+    const rootDirTwo = await createVideoRoot();
+    await writeVideo(rootDirOne, "one.mp4", "video-one");
+    await writeVideo(rootDirOne, "two.mkv", "video-two");
+
+    const app = buildServer({
+      videoRootDirs: [rootDirOne, rootDirTwo],
+      sqlitePath: join(rootDirOne, "catalog.db"),
+    });
+
+    const indexResponse = await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(indexResponse.statusCode).toBe(200);
+
+    const rootsResponse = await app.inject({
+      method: "GET",
+      url: "/api/index/roots",
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(rootsResponse.statusCode).toBe(200);
+    expect(rootsResponse.json()).toEqual({
+      items: [
+        { root: rootDirOne, videoCount: 2 },
+        { root: rootDirTwo, videoCount: 0 },
+      ],
+    });
+  });
+
+  it("includes configured and indexed-only roots in expected order", async () => {
+    const configuredRootA = await createVideoRoot();
+    const configuredRootB = await createVideoRoot();
+    const indexedOnlyRootA = await createVideoRoot();
+    const indexedOnlyRootB = await createVideoRoot();
+    await writeVideo(indexedOnlyRootA, "a.mp4", "video-a");
+    await writeVideo(indexedOnlyRootB, "b.mp4", "video-b");
+
+    const sqlitePath = join(configuredRootA, "catalog.db");
+    const indexingApp = buildServer({
+      videoRootDirs: [indexedOnlyRootA, indexedOnlyRootB],
+      sqlitePath,
+    });
+
+    const indexResponse = await indexingApp.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+    expect(indexResponse.statusCode).toBe(200);
+
+    const configuredApp = buildServer({
+      videoRootDirs: [configuredRootB, configuredRootA],
+      sqlitePath,
+    });
+
+    const rootsResponse = await configuredApp.inject({
+      method: "GET",
+      url: "/api/index/roots",
+      remoteAddress: "127.0.0.1",
+    });
+
+    const sortedIndexedOnlyRoots = [indexedOnlyRootA, indexedOnlyRootB].sort(
+      (a, b) => a.localeCompare(b),
+    );
+
+    expect(rootsResponse.statusCode).toBe(200);
+    expect(rootsResponse.json()).toEqual({
+      items: [
+        { root: configuredRootB, videoCount: 0 },
+        { root: configuredRootA, videoCount: 0 },
+        { root: sortedIndexedOnlyRoots[0], videoCount: 1 },
+        { root: sortedIndexedOnlyRoots[1], videoCount: 1 },
+      ],
+    });
+  });
+
   it("rescan updates and deletes stale entries", async () => {
     const rootDir = await createVideoRoot();
     await writeVideo(rootDir, "keep.mp4", "initial");

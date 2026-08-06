@@ -5,6 +5,7 @@
   --accent: #d4411f;
   --accent-2: #f2b138;
   --border: #d8d4cb;
+  --table-header-bg: #ece7da;
 }
 
 * {
@@ -278,6 +279,46 @@ main {
 
 .admin-layout h1 {
   margin: 0;
+}
+
+.admin-root-summary {
+  margin-top: 0.5rem;
+  overflow-x: auto;
+}
+
+.admin-root-summary h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.05rem;
+}
+
+.admin-root-summary table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.admin-root-summary th,
+.admin-root-summary td {
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-root-summary th {
+  background: var(--table-header-bg);
+  font-weight: 700;
+}
+
+.admin-root-summary tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-root-summary td:last-child,
+.admin-root-summary th:last-child {
+  width: 8rem;
 }
 
 .sr-only {

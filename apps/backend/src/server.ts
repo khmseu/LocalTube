@@ -7,6 +7,7 @@ import { extname, join, resolve } from "node:path";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
 import { openDatabase, type ResumeRow, type VideoRow } from "./db.js";
+import type { RootVideoCount } from "../../shared/src/api-types.js";
 import { scanVideoDirectory } from "./video-indexer.js";
 
 const isLoopbackAddress = (address: string) => {
@@ -722,6 +723,42 @@ export const buildServer = (options: BuildServerOptions = {}) => {
         code: "VIDEO_SCAN_FAILED",
       });
     }
+  });
+
+  app.get("/api/index/roots", async () => {
+    const rows = db
+      .prepare(
+        `
+          SELECT source_root, COUNT(*) as video_count
+          FROM videos
+          GROUP BY source_root
+        `,
+      )
+      .all() as Array<{ source_root: string; video_count: number }>;
+
+    const countByRoot = new Map<string, number>();
+    for (const row of rows) {
+      countByRoot.set(row.source_root, row.video_count);
+    }
+
+    const configuredItems: RootVideoCount[] = videoRootDirs.map((root) => ({
+      root,
+      videoCount: countByRoot.get(root) ?? 0,
+    }));
+    const configuredRootSet = new Set(videoRootDirs);
+
+    // Keep any legacy or previously indexed roots visible for diagnostics.
+    const indexedOnlyItems: RootVideoCount[] = rows
+      .filter((row) => !configuredRootSet.has(row.source_root))
+      .map((row) => ({
+        root: row.source_root,
+        videoCount: row.video_count,
+      }))
+      .sort((a, b) => a.root.localeCompare(b.root));
+
+    return {
+      items: [...configuredItems, ...indexedOnlyItems],
+    };
   });
 
   app.get("/api/videos/:id/resume", async (request, reply) => {
