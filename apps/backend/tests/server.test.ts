@@ -664,7 +664,48 @@ describe("phase 3 media APIs", () => {
     });
 
     expect(streamResponse.statusCode).toBe(206);
+    expect(streamResponse.headers["content-type"]).toContain("video/mp4");
     expect(streamResponse.headers["content-range"]).toBe("bytes 0-3/10");
+    expect(streamResponse.body).toBe("0123");
+  });
+
+  it("stream uses extension-specific content-type", async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, "catalog.db");
+    await writeVideo(rootDir, "clip.mkv", "0123456789");
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=1",
+      remoteAddress: "127.0.0.1",
+    });
+    const videoId = listResponse.json().items[0].id as string;
+
+    const streamResponse = await app.inject({
+      method: "GET",
+      url: `/api/videos/${videoId}/stream`,
+      headers: {
+        range: "bytes=0-3",
+      },
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(streamResponse.statusCode).toBe(206);
+    expect(streamResponse.headers["content-type"]).toContain(
+      "video/x-matroska",
+    );
     expect(streamResponse.body).toBe("0123");
   });
 

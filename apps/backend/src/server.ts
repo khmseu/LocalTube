@@ -278,6 +278,32 @@ const getContentType = (path: string) => {
   }
 };
 
+const getVideoContentType = (path: string) => {
+  const extension = extname(path).toLowerCase();
+  switch (extension) {
+    case ".mp4":
+    case ".m4v":
+      return "video/mp4";
+    case ".webm":
+      return "video/webm";
+    case ".mkv":
+      return "video/x-matroska";
+    case ".mov":
+      return "video/quicktime";
+    case ".avi":
+      return "video/x-msvideo";
+    case ".wmv":
+      return "video/x-ms-wmv";
+    case ".flv":
+      return "video/x-flv";
+    case ".mpg":
+    case ".mpeg":
+      return "video/mpeg";
+    default:
+      return "application/octet-stream";
+  }
+};
+
 const defaultMediaCommandRunner: MediaCommandRunner = async (command, args) => {
   return await new Promise<MediaCommandResult>((resolve) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -840,11 +866,12 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     }
 
     const absolutePath = join(row.source_root, row.relative_path);
+    const videoContentType = getVideoContentType(row.relative_path);
     const rangeHeader = request.headers.range;
 
     if (!rangeHeader || typeof rangeHeader !== "string") {
       reply.code(200);
-      reply.header("content-type", "video/mp4");
+      reply.header("content-type", videoContentType);
       reply.header("accept-ranges", "bytes");
       reply.header("content-length", String(row.size_bytes));
       return reply.send(createReadStream(absolutePath));
@@ -860,7 +887,7 @@ export const buildServer = (options: BuildServerOptions = {}) => {
 
     const contentLength = parsedRange.end - parsedRange.start + 1;
     reply.code(206);
-    reply.header("content-type", "video/mp4");
+    reply.header("content-type", videoContentType);
     reply.header("accept-ranges", "bytes");
     reply.header(
       "content-range",
