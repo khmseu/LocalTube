@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { ReactNode } from "react";
 import type {
   RootVideoCount,
   RootVideoCountResponse,
@@ -19,8 +19,6 @@ type VideoListResponse = {
   total: number;
   items: VideoItem[];
 };
-
-type VideoDetail = VideoItem;
 
 type ResumeResponse = {
   videoId: string;
@@ -161,7 +159,7 @@ const App = () => {
     () => new Set(),
   );
 
-  const [watchVideo, setWatchVideo] = useState<VideoDetail | null>(null);
+  const [watchVideo, setWatchVideo] = useState<VideoItem | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [resumePosition, setResumePosition] = useState<number>(0);
   const [rescanStatus, setRescanStatus] = useState<string | null>(null);
@@ -201,11 +199,9 @@ const App = () => {
       if (videoId === previewVideoId) {
         element.currentTime = 0;
         const playAttempt = element.play();
-        if (playAttempt && typeof playAttempt.catch === "function") {
-          void playAttempt.catch(() => {
-            // Ignore autoplay failures; the thumbnail stays visible until a preview frame loads.
-          });
-        }
+        void playAttempt.catch(() => {
+          // Ignore autoplay failures; the thumbnail stays visible until a preview frame loads.
+        });
         continue;
       }
 
@@ -265,7 +261,7 @@ const App = () => {
         throw new Error("Unable to load resume");
       }
 
-      const video = (await videoResponse.json()) as VideoDetail;
+      const video = (await videoResponse.json()) as VideoItem;
       const resume = (await resumeResponse.json()) as ResumeResponse;
 
       setWatchVideo(video);
@@ -308,12 +304,260 @@ const App = () => {
     return Math.max(1, Math.ceil(browse.total / browse.pageSize));
   }, [browse]);
 
-  const submitSearch = (event: FormEvent) => {
+  const submitSearch = (event: { preventDefault: () => void }) => {
     event.preventDefault();
     const pageSize =
       route.kind === "browse" ? route.pageSize : DEFAULT_PAGE_SIZE;
     const sort = route.kind === "browse" ? route.sort : DEFAULT_SORT_MODE;
     navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
+  };
+
+  const getRootSummaryContent = (): ReactNode => {
+    if (rootCountsError) {
+      return <p role="alert">{rootCountsError}</p>;
+    }
+
+    if (isLoadingRootCounts) {
+      return <p>Loading root summary...</p>;
+    }
+
+    if (rootCounts.length === 0) {
+      return <p>No configured roots found.</p>;
+    }
+
+    return (
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Root</th>
+            <th scope="col">Videos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rootCounts.map((item) => (
+            <tr key={item.root}>
+              <td>{item.root}</td>
+              <td>{item.videoCount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  const renderMainContent = (): ReactNode => {
+    if (route.kind === "browse") {
+      let ellipsisCount = 0;
+
+      return (
+        <section aria-label="Browse videos" className="browse-layout">
+          {browseError ? <p role="alert">{browseError}</p> : null}
+          {!browse ? (
+            <p>Loading videos...</p>
+          ) : (
+            <>
+              <div className="browse-controls">
+                <label htmlFor="catalog-sort">Sort by</label>
+                <select
+                  id="catalog-sort"
+                  value={route.sort}
+                  onChange={(event) =>
+                    changeSortMode(event.target.value as CatalogSortMode)
+                  }
+                >
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="runtime">Runtime (longest first)</option>
+                </select>
+              </div>
+              <ul className="video-grid">
+                {browse.items.map((video) => (
+                  <li key={video.id} className="video-card">
+                    <button
+                      type="button"
+                      className="video-link"
+                      onClick={() =>
+                        navigate(`/watch/${encodeURIComponent(video.id)}`)
+                      }
+                    >
+                      <div
+                        className={
+                          previewVideoId === video.id &&
+                          previewReadyIds.has(video.id)
+                            ? "video-media video-media-active"
+                            : "video-media"
+                        }
+                        onMouseEnter={() => startPreview(video.id)}
+                        onMouseLeave={() => stopPreview(video.id)}
+                      >
+                        <img
+                          src={`/api/videos/${video.id}/thumbnail`}
+                          alt=""
+                          loading="lazy"
+                        />
+                        <video
+                          ref={setPreviewVideoRef(video.id)}
+                          className="video-preview"
+                          src={
+                            previewVideoId === video.id
+                              ? `/api/videos/${video.id}/stream`
+                              : undefined
+                          }
+                          muted
+                          playsInline
+                          loop
+                          preload="metadata"
+                          onLoadedData={() => markPreviewReady(video.id)}
+                          aria-hidden="true"
+                          tabIndex={-1}
+                        >
+                          <track kind="captions" srcLang="en" label="English" />
+                        </video>
+                      </div>
+                      <div className="video-copy">
+                        <h2 className="video-title" title={video.title}>
+                          {video.title}
+                        </h2>
+                        <p>{formatDuration(video.durationSeconds)}</p>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <nav aria-label="Catalog pagination" className="pagination">
+                <button
+                  type="button"
+                  className="pagination-nav"
+                  onClick={() =>
+                    navigate(
+                      toBrowsePath(
+                        Math.max(1, route.page - 1),
+                        route.pageSize,
+                        route.q,
+                        route.sort,
+                      ),
+                    )
+                  }
+                  disabled={route.page <= 1}
+                >
+                  Previous
+                </button>
+                {getPaginationItems(route.page, totalPages).map((item) => {
+                  if (item === "…") {
+                    ellipsisCount += 1;
+                    return (
+                      <span
+                        key={`ellipsis-${route.page}-${ellipsisCount}`}
+                        className="pagination-ellipsis"
+                        aria-hidden="true"
+                      >
+                        …
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      className={
+                        item === route.page
+                          ? "pagination-page pagination-current"
+                          : "pagination-page"
+                      }
+                      onClick={() =>
+                        navigate(
+                          toBrowsePath(
+                            item,
+                            route.pageSize,
+                            route.q,
+                            route.sort,
+                          ),
+                        )
+                      }
+                      disabled={item === route.page}
+                      aria-label={`Page ${item}`}
+                      aria-current={item === route.page ? "page" : undefined}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="pagination-nav"
+                  onClick={() =>
+                    navigate(
+                      toBrowsePath(
+                        Math.min(totalPages, route.page + 1),
+                        route.pageSize,
+                        route.q,
+                        route.sort,
+                      ),
+                    )
+                  }
+                  disabled={route.page >= totalPages}
+                >
+                  Next
+                </button>
+              </nav>
+            </>
+          )}
+        </section>
+      );
+    }
+
+    if (route.kind === "watch") {
+      return (
+        <section className="watch-layout" aria-label="Watch video">
+          <button
+            type="button"
+            className="back-link"
+            onClick={() =>
+              navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+            }
+          >
+            Back to Browse
+          </button>
+          {watchError ? <p role="alert">{watchError}</p> : null}
+          {!watchVideo ? (
+            <p>Loading video...</p>
+          ) : (
+            <>
+              <h1>{watchVideo.title}</h1>
+              <video
+                ref={videoRef}
+                controls
+                src={`/api/videos/${watchVideo.id}/stream`}
+                aria-label="Video player"
+                onTimeUpdate={onTimeUpdate}
+              >
+                <track kind="captions" srcLang="en" label="English" />
+              </video>
+            </>
+          )}
+        </section>
+      );
+    }
+
+    return (
+      <section className="admin-layout" aria-label="Admin">
+        <h1>Admin</h1>
+        <p>Manage the local video index.</p>
+        <button
+          type="button"
+          className="admin-rescan"
+          onClick={() => void triggerRescan()}
+          disabled={isRescanning}
+        >
+          {isRescanning ? "Rescanning..." : "Rescan Library"}
+        </button>
+        {rescanStatus ? <output aria-live="polite">{rescanStatus}</output> : null}
+        <section aria-label="Roots and videos per root" className="admin-root-summary">
+          <h2>Roots and videos per root</h2>
+          {getRootSummaryContent()}
+        </section>
+      </section>
+    );
   };
 
   const loadRootCounts = useCallback(async (signal?: AbortSignal) => {
@@ -507,225 +751,7 @@ const App = () => {
         </button>
       </header>
 
-      <main>
-        {route.kind === "browse" ? (
-          <section aria-label="Browse videos" className="browse-layout">
-            {browseError ? <p role="alert">{browseError}</p> : null}
-            {!browse ? (
-              <p>Loading videos...</p>
-            ) : (
-              <>
-                <div className="browse-controls">
-                  <label htmlFor="catalog-sort">Sort by</label>
-                  <select
-                    id="catalog-sort"
-                    value={route.sort}
-                    onChange={(event) =>
-                      changeSortMode(event.target.value as CatalogSortMode)
-                    }
-                  >
-                    <option value="alphabetical">Alphabetical</option>
-                    <option value="runtime">Runtime (longest first)</option>
-                  </select>
-                </div>
-                <ul className="video-grid">
-                  {browse.items.map((video) => (
-                    <li key={video.id} className="video-card">
-                      <button
-                        type="button"
-                        className="video-link"
-                        onClick={() =>
-                          navigate(`/watch/${encodeURIComponent(video.id)}`)
-                        }
-                      >
-                        <div
-                          className={
-                            previewVideoId === video.id &&
-                            previewReadyIds.has(video.id)
-                              ? "video-media video-media-active"
-                              : "video-media"
-                          }
-                          onMouseEnter={() => startPreview(video.id)}
-                          onMouseLeave={() => stopPreview(video.id)}
-                        >
-                          <img
-                            src={`/api/videos/${video.id}/thumbnail`}
-                            alt=""
-                            loading="lazy"
-                          />
-                          <video
-                            ref={setPreviewVideoRef(video.id)}
-                            className="video-preview"
-                            src={
-                              previewVideoId === video.id
-                                ? `/api/videos/${video.id}/stream`
-                                : undefined
-                            }
-                            muted
-                            playsInline
-                            loop
-                            preload="metadata"
-                            onLoadedData={() => markPreviewReady(video.id)}
-                            aria-hidden="true"
-                            tabIndex={-1}
-                          />
-                        </div>
-                        <div className="video-copy">
-                          <h2 className="video-title" title={video.title}>
-                            {video.title}
-                          </h2>
-                          <p>{formatDuration(video.durationSeconds)}</p>
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <nav aria-label="Catalog pagination" className="pagination">
-                  <button
-                    type="button"
-                    className="pagination-nav"
-                    onClick={() =>
-                      navigate(
-                        toBrowsePath(
-                          Math.max(1, route.page - 1),
-                          route.pageSize,
-                          route.q,
-                          route.sort,
-                        ),
-                      )
-                    }
-                    disabled={route.page <= 1}
-                  >
-                    Previous
-                  </button>
-                  {getPaginationItems(route.page, totalPages).map((item, i) =>
-                    item === "…" ? (
-                      <span
-                        key={`…-${i}`}
-                        className="pagination-ellipsis"
-                        aria-hidden="true"
-                      >
-                        …
-                      </span>
-                    ) : (
-                      <button
-                        key={item}
-                        type="button"
-                        className={
-                          item === route.page
-                            ? "pagination-page pagination-current"
-                            : "pagination-page"
-                        }
-                        onClick={() =>
-                          navigate(
-                            toBrowsePath(
-                              item,
-                              route.pageSize,
-                              route.q,
-                              route.sort,
-                            ),
-                          )
-                        }
-                        disabled={item === route.page}
-                        aria-label={`Page ${item}`}
-                        aria-current={item === route.page ? "page" : undefined}
-                      >
-                        {item}
-                      </button>
-                    ),
-                  )}
-                  <button
-                    type="button"
-                    className="pagination-nav"
-                    onClick={() =>
-                      navigate(
-                        toBrowsePath(
-                          Math.min(totalPages, route.page + 1),
-                          route.pageSize,
-                          route.q,
-                          route.sort,
-                        ),
-                      )
-                    }
-                    disabled={route.page >= totalPages}
-                  >
-                    Next
-                  </button>
-                </nav>
-              </>
-            )}
-          </section>
-        ) : route.kind === "watch" ? (
-          <section className="watch-layout" aria-label="Watch video">
-            <button
-              type="button"
-              className="back-link"
-              onClick={() =>
-                navigate(
-                  toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE),
-                )
-              }
-            >
-              Back to Browse
-            </button>
-            {watchError ? <p role="alert">{watchError}</p> : null}
-            {!watchVideo ? (
-              <p>Loading video...</p>
-            ) : (
-              <>
-                <h1>{watchVideo.title}</h1>
-                <video
-                  ref={videoRef}
-                  controls
-                  src={`/api/videos/${watchVideo.id}/stream`}
-                  aria-label="Video player"
-                  onTimeUpdate={onTimeUpdate}
-                />
-              </>
-            )}
-          </section>
-        ) : (
-          <section className="admin-layout" aria-label="Admin">
-            <h1>Admin</h1>
-            <p>Manage the local video index.</p>
-            <button
-              type="button"
-              className="admin-rescan"
-              onClick={() => void triggerRescan()}
-              disabled={isRescanning}
-            >
-              {isRescanning ? "Rescanning..." : "Rescan Library"}
-            </button>
-            {rescanStatus ? <p role="status">{rescanStatus}</p> : null}
-            <section aria-label="Roots and videos per root" className="admin-root-summary">
-              <h2>Roots and videos per root</h2>
-              {rootCountsError ? <p role="alert">{rootCountsError}</p> : null}
-              {isLoadingRootCounts ? (
-                <p>Loading root summary...</p>
-              ) : rootCounts.length === 0 ? (
-                <p>No configured roots found.</p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">Root</th>
-                      <th scope="col">Videos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rootCounts.map((item) => (
-                      <tr key={item.root}>
-                        <td>{item.root}</td>
-                        <td>{item.videoCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-          </section>
-        )}
-      </main>
+      <main>{renderMainContent()}</main>
     </div>
   );
 };

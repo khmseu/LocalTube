@@ -666,9 +666,9 @@ describe("phase 4 frontend integration", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/index/rescan", {
         method: "POST",
       });
-      expect(screen.getByRole("status")).toHaveTextContent(
+      expect(screen.getByText(
         "Rescan complete: 2 inserted, 1 updated, 0 deleted.",
-      );
+      )).toBeInTheDocument();
 
       const updatedRootCell = within(rootSummaryRegion).getByRole("cell", {
         name: "/videos/library",

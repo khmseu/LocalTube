@@ -191,11 +191,14 @@ const getVideoRootDirs = (videoRootDirs?: string[], videoRootDir?: string) => {
     source = "none";
   }
 
-  const parsed = optionValue.length > 0
-    ? optionValue
-    : videoRootDir
-      ? [videoRootDir]
-      : parseVideoRootDirs(process.env.LOCALTUBE_VIDEO_ROOTS);
+  let parsed: string[];
+  if (optionValue.length > 0) {
+    parsed = optionValue;
+  } else if (videoRootDir) {
+    parsed = [videoRootDir];
+  } else {
+    parsed = parseVideoRootDirs(process.env.LOCALTUBE_VIDEO_ROOTS);
+  }
 
   const pathValue = parsed.length > 0 ? parsed.join(",") : undefined;
   console.log(`[Config] LOCALTUBE_VIDEO_ROOTS: "${pathValue}" (from ${source})`);
