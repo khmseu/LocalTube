@@ -296,11 +296,14 @@ describe("phase 2 indexing and catalog APIs", () => {
     });
 
     expect(rootsResponse.statusCode).toBe(200);
+    const expectedRoots: Array<{ root: string; videoCount: number }> = [
+      { root: rootDirOne, videoCount: 2 },
+      { root: rootDirTwo, videoCount: 0 },
+    ];
     expect(rootsResponse.json()).toEqual({
-      items: [
-        { root: rootDirOne, videoCount: 2 },
-        { root: rootDirTwo, videoCount: 0 },
-      ],
+      items: expectedRoots.sort((left, right) =>
+        left.root.localeCompare(right.root),
+      ),
     });
   });
 
@@ -340,15 +343,20 @@ describe("phase 2 indexing and catalog APIs", () => {
     const sortedIndexedOnlyRoots = [indexedOnlyRootA, indexedOnlyRootB].sort(
       (a, b) => a.localeCompare(b),
     );
+    const [sortedIndexedOnlyRootA, sortedIndexedOnlyRootB] =
+      sortedIndexedOnlyRoots as [string, string];
+    const expectedRoots: Array<{ root: string; videoCount: number }> = [
+      { root: configuredRootB, videoCount: 0 },
+      { root: configuredRootA, videoCount: 0 },
+      { root: sortedIndexedOnlyRootA, videoCount: 1 },
+      { root: sortedIndexedOnlyRootB, videoCount: 1 },
+    ];
 
     expect(rootsResponse.statusCode).toBe(200);
     expect(rootsResponse.json()).toEqual({
-      items: [
-        { root: configuredRootB, videoCount: 0 },
-        { root: configuredRootA, videoCount: 0 },
-        { root: sortedIndexedOnlyRoots[0], videoCount: 1 },
-        { root: sortedIndexedOnlyRoots[1], videoCount: 1 },
-      ],
+      items: expectedRoots.sort((left, right) =>
+        left.root.localeCompare(right.root),
+      ),
     });
   });
 
@@ -394,6 +402,49 @@ describe("phase 2 indexing and catalog APIs", () => {
     expect(listResponse.json().items[0].sizeBytes).toBeGreaterThan(
       "initial".length,
     );
+  });
+
+  it("rescan restores tags from filesystem sidecar files", async () => {
+    const rootDir = await createVideoRoot();
+    await writeVideo(rootDir, "tagged.mp4", "tagged-video");
+    await writeFile(
+      join(rootDir, "tagged.mp4.localtube-tags.json"),
+      JSON.stringify(["beta", "alpha", "alpha"]),
+      "utf8",
+    );
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath: join(rootDir, "catalog.db"),
+    });
+
+    const indexResponse = await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+    expect(indexResponse.statusCode).toBe(200);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=10",
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json().items[0].tags).toEqual(["alpha", "beta"]);
+
+    const tagsResponse = await app.inject({
+      method: "GET",
+      url: "/api/index/tags",
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(tagsResponse.statusCode).toBe(200);
+    expect(tagsResponse.json()).toEqual({
+      items: [{ tag: "alpha", videoCount: 1 }, { tag: "beta", videoCount: 1 }],
+    });
   });
 
   it("resume position upsert", async () => {

@@ -25,6 +25,7 @@ const jsonResponse = (value: unknown, init: MockResponseInit = {}) => {
 describe("phase 4 frontend integration", () => {
   beforeEach(() => {
     window.history.pushState({}, "", "/");
+    window.localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -160,6 +161,7 @@ describe("phase 4 frontend integration", () => {
           formatName: "mp4",
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          tags: [],
         });
       }
       if (url.endsWith("/api/videos/video-click/resume")) {
@@ -435,6 +437,32 @@ describe("phase 4 frontend integration", () => {
     );
   });
 
+  it("uses the stored page size when the URL omits pageSize", async () => {
+    window.localStorage.setItem("localtube:browse-page-size", "24");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({ page: 1, pageSize: 24, total: 0, items: [] });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "/api/videos?page=1&pageSize=24&q=&sort=alphabetical",
+        expect.anything(),
+      );
+    });
+
+    expect(
+      screen.getByLabelText("Show"),
+    ).toHaveValue(24);
+  });
+
   it("sort selection updates catalog request and resets to page 1", async () => {
     window.history.pushState({}, "", "/?page=3&pageSize=2");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -517,6 +545,7 @@ describe("phase 4 frontend integration", () => {
           formatName: "mp4",
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          tags: [],
         });
       }
       if (url.endsWith("/api/videos/video-1/resume")) {
@@ -559,6 +588,7 @@ describe("phase 4 frontend integration", () => {
             formatName: "mp4",
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-01-01T00:00:00.000Z",
+            tags: [],
           });
         }
         if (
@@ -630,6 +660,12 @@ describe("phase 4 frontend integration", () => {
 
           return jsonResponse({
             items: [{ root: "/videos/library", videoCount: 5 }],
+          });
+        }
+
+        if (url.endsWith("/api/index/tags") && (!init || init.method === "GET")) {
+          return jsonResponse({
+            items: [{ tag: "alpha", videoCount: 2 }],
           });
         }
 

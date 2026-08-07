@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS resume_progress (
   updated_at TEXT NOT NULL,
   FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS video_tags (
+  video_id TEXT NOT NULL,
+  tag_name TEXT NOT NULL,
+  FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE,
+  UNIQUE(video_id, tag_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_tags_video_id ON video_tags(video_id);
+CREATE INDEX IF NOT EXISTS idx_video_tags_tag_name ON video_tags(tag_name);
 `;
 
 const migrateVideosSchema = (db: Database.Database) => {

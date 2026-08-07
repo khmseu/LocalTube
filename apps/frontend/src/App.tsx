@@ -11,6 +11,7 @@ type VideoItem = {
   title: string;
   path: string;
   durationSeconds: number | null;
+  tags: string[];
 };
 
 type VideoListResponse = {
@@ -24,6 +25,15 @@ type ResumeResponse = {
   videoId: string;
   positionSeconds: number;
   updatedAt: string | null;
+};
+
+type TagCount = {
+  tag: string;
+  videoCount: number;
+};
+
+type TagCountResponse = {
+  items: TagCount[];
 };
 
 type BrowseRoute = {
@@ -49,6 +59,7 @@ type CatalogSortMode = "alphabetical" | "runtime";
 
 const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SORT_MODE: CatalogSortMode = "alphabetical";
+const PAGE_SIZE_STORAGE_KEY = "localtube:browse-page-size";
 
 const readPositiveNumber = (value: string | null, fallback: number): number => {
   if (!value) {
@@ -59,6 +70,25 @@ const readPositiveNumber = (value: string | null, fallback: number): number => {
     return fallback;
   }
   return parsed;
+};
+
+const readStoredPageSize = () => {
+  try {
+    return readPositiveNumber(
+      window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY),
+      DEFAULT_PAGE_SIZE,
+    );
+  } catch {
+    return DEFAULT_PAGE_SIZE;
+  }
+};
+
+const writeStoredPageSize = (value: number) => {
+  try {
+    window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(value));
+  } catch {
+    // Ignore storage failures and keep the current browse state working.
+  }
 };
 
 const getRouteFromLocation = (): AppRoute => {
@@ -81,7 +111,7 @@ const getRouteFromLocation = (): AppRoute => {
   return {
     kind: "browse",
     page: readPositiveNumber(params.get("page"), 1),
-    pageSize: readPositiveNumber(params.get("pageSize"), DEFAULT_PAGE_SIZE),
+    pageSize: readPositiveNumber(params.get("pageSize"), readStoredPageSize()),
     q: params.get("q")?.trim() ?? "",
     sort,
   };
@@ -167,6 +197,13 @@ const App = () => {
   const [rootCounts, setRootCounts] = useState<RootVideoCount[]>([]);
   const [isLoadingRootCounts, setIsLoadingRootCounts] = useState(false);
   const [rootCountsError, setRootCountsError] = useState<string | null>(null);
+  const [tagCounts, setTagCounts] = useState<TagCount[]>([]);
+  const [isLoadingTagCounts, setIsLoadingTagCounts] = useState(false);
+  const [tagCountsError, setTagCountsError] = useState<string | null>(null);
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagEditorStatus, setTagEditorStatus] = useState<string | null>(null);
+  const [tagEditorError, setTagEditorError] = useState<string | null>(null);
+  const [isSavingTags, setIsSavingTags] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRefs = useRef(new Map<string, HTMLVideoElement>());
@@ -187,6 +224,7 @@ const App = () => {
       setSearchInput(route.q);
       setPreviewVideoId(null);
       setPreviewReadyIds(new Set());
+      writeStoredPageSize(route.pageSize);
       return;
     }
 
@@ -265,6 +303,7 @@ const App = () => {
       const resume = (await resumeResponse.json()) as ResumeResponse;
 
       setWatchVideo(video);
+      setTagDraft("");
       setResumePosition(resume.positionSeconds);
       lastSyncedSecondsRef.current = resume.positionSeconds;
     };
@@ -307,7 +346,7 @@ const App = () => {
   const submitSearch = (event: { preventDefault: () => void }) => {
     event.preventDefault();
     const pageSize =
-      route.kind === "browse" ? route.pageSize : DEFAULT_PAGE_SIZE;
+      route.kind === "browse" ? route.pageSize : readStoredPageSize();
     const sort = route.kind === "browse" ? route.sort : DEFAULT_SORT_MODE;
     navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
   };
@@ -327,6 +366,7 @@ const App = () => {
 
     return (
       <table>
+        <caption className="sr-only">Roots and videos per root</caption>
         <thead>
           <tr>
             <th scope="col">Root</th>
@@ -345,200 +385,324 @@ const App = () => {
     );
   };
 
-  const renderMainContent = (): ReactNode => {
-    if (route.kind === "browse") {
-      let ellipsisCount = 0;
+  const getTagSummaryContent = (): ReactNode => {
+    if (tagCountsError) {
+      return <p role="alert">{tagCountsError}</p>;
+    }
 
-      return (
-        <section aria-label="Browse videos" className="browse-layout">
-          {browseError ? <p role="alert">{browseError}</p> : null}
-          {!browse ? (
-            <p>Loading videos...</p>
-          ) : (
-            <>
-              <div className="browse-controls">
-                <label htmlFor="catalog-sort">Sort by</label>
-                <select
-                  id="catalog-sort"
-                  value={route.sort}
-                  onChange={(event) =>
-                    changeSortMode(event.target.value as CatalogSortMode)
+    if (isLoadingTagCounts) {
+      return <p>Loading tag summary...</p>;
+    }
+
+    if (tagCounts.length === 0) {
+      return <p>No tags found.</p>;
+    }
+
+    return (
+      <table>
+        <caption className="sr-only">Tags and videos per tag</caption>
+        <thead>
+          <tr>
+            <th scope="col">Tag</th>
+            <th scope="col">Videos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tagCounts.map((item) => (
+            <tr key={item.tag}>
+              <td>{item.tag}</td>
+              <td>{item.videoCount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  const renderBrowseControls = (browseRoute: BrowseRoute) => {
+    return (
+      <div className="browse-controls">
+        <label htmlFor="catalog-sort">Sort by</label>
+        <select
+          id="catalog-sort"
+          value={browseRoute.sort}
+          onChange={(event) =>
+            changeSortMode(event.target.value as CatalogSortMode)
+          }
+        >
+          <option value="alphabetical">Alphabetical</option>
+          <option value="runtime">Runtime (longest first)</option>
+        </select>
+        <label htmlFor="catalog-page-size">Show</label>
+        <input
+          id="catalog-page-size"
+          className="catalog-page-size"
+          type="number"
+          min={1}
+          step={1}
+          value={browseRoute.pageSize}
+          onChange={(event) => changePageSize(event.currentTarget.valueAsNumber)}
+        />
+        <span>videos</span>
+      </div>
+    );
+  };
+
+  const renderBrowseCards = (browseResponse: VideoListResponse) => {
+    return (
+      <ul className="video-grid">
+        {browseResponse.items.map((video) => (
+          <li key={video.id} className="video-card">
+            <button
+              type="button"
+              className="video-link"
+              onClick={() => navigate(`/watch/${encodeURIComponent(video.id)}`)}
+            >
+              <div
+                className={
+                  previewVideoId === video.id && previewReadyIds.has(video.id)
+                    ? "video-media video-media-active"
+                    : "video-media"
+                }
+                onMouseEnter={() => startPreview(video.id)}
+                onMouseLeave={() => stopPreview(video.id)}
+              >
+                <img
+                  src={`/api/videos/${video.id}/thumbnail`}
+                  alt=""
+                  loading="lazy"
+                />
+                <video
+                  ref={setPreviewVideoRef(video.id)}
+                  className="video-preview"
+                  src={
+                    previewVideoId === video.id
+                      ? `/api/videos/${video.id}/stream`
+                      : undefined
                   }
+                  muted
+                  playsInline
+                  loop
+                  preload="metadata"
+                  onLoadedData={() => markPreviewReady(video.id)}
+                  aria-hidden="true"
+                  tabIndex={-1}
                 >
-                  <option value="alphabetical">Alphabetical</option>
-                  <option value="runtime">Runtime (longest first)</option>
-                </select>
+                  <track kind="captions" srcLang="en" label="English" />
+                </video>
               </div>
-              <ul className="video-grid">
-                {browse.items.map((video) => (
-                  <li key={video.id} className="video-card">
-                    <button
-                      type="button"
-                      className="video-link"
-                      onClick={() =>
-                        navigate(`/watch/${encodeURIComponent(video.id)}`)
-                      }
-                    >
-                      <div
-                        className={
-                          previewVideoId === video.id &&
-                          previewReadyIds.has(video.id)
-                            ? "video-media video-media-active"
-                            : "video-media"
-                        }
-                        onMouseEnter={() => startPreview(video.id)}
-                        onMouseLeave={() => stopPreview(video.id)}
-                      >
-                        <img
-                          src={`/api/videos/${video.id}/thumbnail`}
-                          alt=""
-                          loading="lazy"
-                        />
-                        <video
-                          ref={setPreviewVideoRef(video.id)}
-                          className="video-preview"
-                          src={
-                            previewVideoId === video.id
-                              ? `/api/videos/${video.id}/stream`
-                              : undefined
-                          }
-                          muted
-                          playsInline
-                          loop
-                          preload="metadata"
-                          onLoadedData={() => markPreviewReady(video.id)}
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        >
-                          <track kind="captions" srcLang="en" label="English" />
-                        </video>
-                      </div>
-                      <div className="video-copy">
-                        <h2 className="video-title" title={video.title}>
-                          {video.title}
-                        </h2>
-                        <p>{formatDuration(video.durationSeconds)}</p>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <nav aria-label="Catalog pagination" className="pagination">
-                <button
-                  type="button"
-                  className="pagination-nav"
-                  onClick={() =>
-                    navigate(
-                      toBrowsePath(
-                        Math.max(1, route.page - 1),
-                        route.pageSize,
-                        route.q,
-                        route.sort,
-                      ),
-                    )
-                  }
-                  disabled={route.page <= 1}
-                >
-                  Previous
-                </button>
-                {getPaginationItems(route.page, totalPages).map((item) => {
-                  if (item === "…") {
-                    ellipsisCount += 1;
-                    return (
-                      <span
-                        key={`ellipsis-${route.page}-${ellipsisCount}`}
-                        className="pagination-ellipsis"
-                        aria-hidden="true"
-                      >
-                        …
-                      </span>
-                    );
-                  }
+              <div className="video-copy">
+                <h2 className="video-title" title={video.title}>
+                  {video.title}
+                </h2>
+                <p>{formatDuration(video.durationSeconds)}</p>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  };
 
-                  return (
+  const renderBrowsePagination = (browseRoute: BrowseRoute) => {
+    let ellipsisCount = 0;
+
+    return (
+      <nav aria-label="Catalog pagination" className="pagination">
+        <button
+          type="button"
+          className="pagination-nav"
+          onClick={() =>
+            navigate(
+              toBrowsePath(
+                Math.max(1, browseRoute.page - 1),
+                browseRoute.pageSize,
+                browseRoute.q,
+                browseRoute.sort,
+              ),
+            )
+          }
+          disabled={browseRoute.page <= 1}
+        >
+          Previous
+        </button>
+        {getPaginationItems(browseRoute.page, totalPages).map((item) => {
+          if (item === "…") {
+            ellipsisCount += 1;
+            return (
+              <span
+                key={`ellipsis-${browseRoute.page}-${ellipsisCount}`}
+                className="pagination-ellipsis"
+                aria-hidden="true"
+              >
+                …
+              </span>
+            );
+          }
+
+          return (
+            <button
+              key={item}
+              type="button"
+              className={
+                  item === browseRoute.page
+                  ? "pagination-page pagination-current"
+                  : "pagination-page"
+              }
+              onClick={() =>
+                navigate(
+                    toBrowsePath(
+                      item,
+                      browseRoute.pageSize,
+                      browseRoute.q,
+                      browseRoute.sort,
+                    ),
+                )
+              }
+                disabled={item === browseRoute.page}
+              aria-label={`Page ${item}`}
+                aria-current={item === browseRoute.page ? "page" : undefined}
+            >
+              {item}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          className="pagination-nav"
+          onClick={() =>
+            navigate(
+              toBrowsePath(
+                Math.min(totalPages, browseRoute.page + 1),
+                browseRoute.pageSize,
+                browseRoute.q,
+                browseRoute.sort,
+              ),
+            )
+          }
+          disabled={browseRoute.page >= totalPages}
+        >
+          Next
+        </button>
+      </nav>
+    );
+  };
+
+  const renderBrowseContent = (): ReactNode => {
+    if (route.kind !== "browse") {
+      return null;
+    }
+
+    return (
+      <section aria-label="Browse videos" className="browse-layout">
+        {browseError ? <p role="alert">{browseError}</p> : null}
+        {!browse && !browseError ? <p>Loading videos...</p> : null}
+        {browse ? (
+          <>
+            {renderBrowseControls(route)}
+            {renderBrowseCards(browse)}
+            {renderBrowsePagination(route)}
+          </>
+        ) : null}
+      </section>
+    );
+  };
+
+  const renderWatchContent = (watchRoute: WatchRoute): ReactNode => {
+    const knownTags = tagCounts.map((item) => item.tag);
+
+    return (
+      <section className="watch-layout" aria-label="Watch video">
+        <button
+          type="button"
+          className="back-link"
+          onClick={() =>
+            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+          }
+        >
+          Back to Browse
+        </button>
+        {watchError ? <p role="alert">{watchError}</p> : null}
+        {!watchVideo ? (
+          <p>Loading video...</p>
+        ) : (
+          <>
+            <h1>{watchVideo.title}</h1>
+            <video
+              ref={videoRef}
+              controls
+              src={`/api/videos/${watchVideo.id}/stream`}
+              aria-label="Video player"
+              onTimeUpdate={onTimeUpdate}
+            >
+              <track kind="captions" srcLang="en" label="English" />
+            </video>
+            <section className="tag-editor" aria-label="Video tags">
+              <h2>Tags</h2>
+              {tagEditorError ? <p role="alert">{tagEditorError}</p> : null}
+              {tagEditorStatus ? <p aria-live="polite">{tagEditorStatus}</p> : null}
+              <div className="tag-chip-list">
+                {watchVideo.tags.length === 0 ? (
+                  <p>No tags assigned.</p>
+                ) : (
+                  watchVideo.tags.map((tag) => (
                     <button
-                      key={item}
+                      key={tag}
                       type="button"
-                      className={
-                        item === route.page
-                          ? "pagination-page pagination-current"
-                          : "pagination-page"
-                      }
+                      className="tag-chip"
                       onClick={() =>
-                        navigate(
-                          toBrowsePath(
-                            item,
-                            route.pageSize,
-                            route.q,
-                            route.sort,
+                        void saveWatchTags(
+                          watchVideo.tags.filter(
+                            (existingTag) => existingTag !== tag,
                           ),
                         )
                       }
-                      disabled={item === route.page}
-                      aria-label={`Page ${item}`}
-                      aria-current={item === route.page ? "page" : undefined}
+                      disabled={isSavingTags}
+                      aria-label={`Remove tag ${tag}`}
                     >
-                      {item}
+                      {tag}
+                      <span aria-hidden="true">×</span>
                     </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  className="pagination-nav"
-                  onClick={() =>
-                    navigate(
-                      toBrowsePath(
-                        Math.min(totalPages, route.page + 1),
-                        route.pageSize,
-                        route.q,
-                        route.sort,
-                      ),
-                    )
+                  ))
+                )}
+              </div>
+              <form
+                className="tag-editor-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (tagDraft.trim().length === 0) {
+                    return;
                   }
-                  disabled={route.page >= totalPages}
-                >
-                  Next
-                </button>
-              </nav>
-            </>
-          )}
-        </section>
-      );
-    }
-
-    if (route.kind === "watch") {
-      return (
-        <section className="watch-layout" aria-label="Watch video">
-          <button
-            type="button"
-            className="back-link"
-            onClick={() =>
-              navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
-            }
-          >
-            Back to Browse
-          </button>
-          {watchError ? <p role="alert">{watchError}</p> : null}
-          {!watchVideo ? (
-            <p>Loading video...</p>
-          ) : (
-            <>
-              <h1>{watchVideo.title}</h1>
-              <video
-                ref={videoRef}
-                controls
-                src={`/api/videos/${watchVideo.id}/stream`}
-                aria-label="Video player"
-                onTimeUpdate={onTimeUpdate}
+                  void saveWatchTags([...watchVideo.tags, tagDraft]);
+                }}
               >
-                <track kind="captions" srcLang="en" label="English" />
-              </video>
-            </>
-          )}
-        </section>
-      );
-    }
+                <label htmlFor="video-tag-input" className="sr-only">
+                  Add tag
+                </label>
+                <input
+                  id="video-tag-input"
+                  list="known-video-tags"
+                  value={tagDraft}
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  placeholder="Add a tag"
+                />
+                <datalist id="known-video-tags">
+                  {knownTags.map((tag) => (
+                    <option key={tag} value={tag} />
+                  ))}
+                </datalist>
+                <button type="submit" disabled={isSavingTags}>
+                  Add tag
+                </button>
+              </form>
+            </section>
+          </>
+        )}
+      </section>
+    );
+  };
 
+  const renderAdminContent = (_adminRoute: AdminRoute): ReactNode => {
     return (
       <section className="admin-layout" aria-label="Admin">
         <h1>Admin</h1>
@@ -556,8 +720,24 @@ const App = () => {
           <h2>Roots and videos per root</h2>
           {getRootSummaryContent()}
         </section>
+        <section aria-label="Tags and videos per tag" className="admin-tag-summary">
+          <h2>Tags and videos per tag</h2>
+          {getTagSummaryContent()}
+        </section>
       </section>
     );
+  };
+
+  const renderMainContent = (): ReactNode => {
+    if (route.kind === "browse") {
+      return renderBrowseContent();
+    }
+
+    if (route.kind === "watch") {
+      return renderWatchContent(route);
+    }
+
+    return renderAdminContent(route);
   };
 
   const loadRootCounts = useCallback(async (signal?: AbortSignal) => {
@@ -565,10 +745,10 @@ const App = () => {
     setRootCountsError(null);
 
     try {
-      const response = await fetch("/api/index/roots", {
-        method: "GET",
-        signal,
-      });
+      const response = await fetch(
+        "/api/index/roots",
+        signal ? { method: "GET", signal } : { method: "GET" },
+      );
       if (!response.ok) {
         const contentType = response.headers.get("content-type") ?? "";
         let detail = "";
@@ -603,6 +783,47 @@ const App = () => {
     }
   }, []);
 
+  const loadTagCounts = useCallback(async (signal?: AbortSignal) => {
+    setIsLoadingTagCounts(true);
+    setTagCountsError(null);
+
+    try {
+      const response = await fetch(
+        "/api/index/tags",
+        signal ? { method: "GET", signal } : { method: "GET" },
+      );
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type") ?? "";
+        let detail = "";
+
+        if (contentType.includes("application/json")) {
+          const payload = (await response.json()) as { error?: string };
+          detail = payload.error ?? "";
+        } else {
+          detail = (await response.text()).trim();
+        }
+
+        const suffix = detail.length > 0 ? `: ${detail}` : "";
+        throw new Error(
+          `Could not load tags and video counts (HTTP ${response.status})${suffix}`,
+        );
+      }
+
+      const data = (await response.json()) as TagCountResponse;
+      setTagCounts(data.items);
+    } catch (error: unknown) {
+      if (isAbortError(error)) {
+        return;
+      }
+
+      setTagCountsError(
+        error instanceof Error ? error.message : "Could not load tag counts.",
+      );
+    } finally {
+      setIsLoadingTagCounts(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (route.kind !== "admin") {
       return;
@@ -610,11 +831,25 @@ const App = () => {
 
     const controller = new AbortController();
     void loadRootCounts(controller.signal);
+    void loadTagCounts(controller.signal);
 
     return () => {
       controller.abort();
     };
-  }, [route.kind, loadRootCounts]);
+  }, [route.kind, loadRootCounts, loadTagCounts]);
+
+  useEffect(() => {
+    if (route.kind !== "watch") {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadTagCounts(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [route.kind, loadTagCounts]);
 
   const triggerRescan = async () => {
     setIsRescanning(true);
@@ -648,6 +883,67 @@ const App = () => {
     }
 
     navigate(toBrowsePath(1, route.pageSize, route.q, nextSort));
+  };
+
+  const changePageSize = (nextPageSize: number) => {
+    if (route.kind !== "browse") {
+      return;
+    }
+
+    const sanitizedPageSize = readPositiveNumber(
+      Number.isFinite(nextPageSize) ? String(nextPageSize) : null,
+      route.pageSize,
+    );
+    writeStoredPageSize(sanitizedPageSize);
+    navigate(toBrowsePath(1, sanitizedPageSize, route.q, route.sort));
+  };
+
+  const saveWatchTags = async (nextTags: string[]) => {
+    if (route.kind !== "watch" || !watchVideo) {
+      return;
+    }
+
+    const normalizedTags = Array.from(
+      new Set(
+        nextTags
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    setIsSavingTags(true);
+    setTagEditorError(null);
+    setTagEditorStatus(null);
+
+    try {
+      const response = await fetch(`/api/videos/${watchVideo.id}/tags`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tags: normalizedTags }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to update tags");
+      }
+
+      const payload = (await response.json()) as {
+        videoId: string;
+        tags: string[];
+      };
+
+      setWatchVideo((current) =>
+        current?.id === payload.videoId
+          ? { ...current, tags: payload.tags }
+          : current,
+      );
+      setTagDraft("");
+      setTagEditorStatus("Tags saved.");
+      await loadTagCounts();
+    } catch {
+      setTagEditorError("Could not save tags.");
+    } finally {
+      setIsSavingTags(false);
+    }
   };
 
   const onTimeUpdate = () => {

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import type { FastifyReply } from "fastify";
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, mkdir, stat } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { URL } from "node:url";
 import type Database from "better-sqlite3";
@@ -104,9 +104,17 @@ type VideoListItem = {
   formatName: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: string[];
 };
 
-const rowToVideo = (row: VideoRow): VideoListItem => {
+const TAG_SIDECAR_SUFFIX = ".localtube-tags.json";
+const RESCAN_CONCURRENCY = 8;
+
+const makeVideoLookupKey = (sourceRoot: string, relativePath: string) => {
+  return JSON.stringify([sourceRoot, relativePath]);
+};
+
+const rowToVideo = (row: VideoRow, tags: string[]): VideoListItem => {
   return {
     id: row.id,
     path: row.relative_path,
@@ -120,7 +128,166 @@ const rowToVideo = (row: VideoRow): VideoListItem => {
     formatName: row.format_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    tags,
   };
+};
+
+const getVideoTagSidecarPath = (sourceRoot: string, relativePath: string) => {
+  return join(sourceRoot, `${relativePath}${TAG_SIDECAR_SUFFIX}`);
+};
+
+const normalizeTags = (tags: string[]) => {
+  const normalized = new Set<string>();
+
+  for (const tag of tags) {
+    const trimmed = tag.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+
+    normalized.add(trimmed);
+  }
+
+  return Array.from(normalized).sort((a, b) => a.localeCompare(b));
+};
+
+const readVideoTagsFromSidecar = async (sidecarPath: string) => {
+  try {
+    const contents = await readFile(sidecarPath, "utf8");
+    const parsed = JSON.parse(contents) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      throw new TypeError("Tag sidecar file must contain an array of strings");
+    }
+
+    const tags = parsed.map((value) => {
+      if (typeof value !== "string") {
+        throw new TypeError("Tag sidecar file must contain an array of strings");
+      }
+
+      return value;
+    });
+
+    return normalizeTags(tags);
+  } catch (error) {
+    if (hasErrorCode(error) && error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+};
+
+const loadDiscoveryDetails = async (
+  runMediaCommand: MediaCommandRunner,
+  item: {
+    id: string;
+    sourceRoot: string;
+    relativePath: string;
+    title: string;
+    mtimeMs: number;
+    sizeBytes: number;
+  },
+) => {
+  const sourcePath = join(item.sourceRoot, item.relativePath);
+
+  try {
+    const [metadata, tags] = await Promise.all([
+      probeVideoMetadata(runMediaCommand, sourcePath),
+      readVideoTagsFromSidecar(getVideoTagSidecarPath(item.sourceRoot, item.relativePath)),
+    ]);
+
+    return {
+      identity: makeVideoLookupKey(item.sourceRoot, item.relativePath),
+      metadata,
+      tags,
+    };
+  } catch (error) {
+    console.error(`[Scan] Failed to load metadata or tags for ${sourcePath}`, error);
+    throw error;
+  }
+};
+
+const writeVideoTagsToSidecar = async (
+  sourceRoot: string,
+  relativePath: string,
+  tags: string[],
+) => {
+  const sidecarPath = getVideoTagSidecarPath(sourceRoot, relativePath);
+  const normalizedTags = normalizeTags(tags);
+  await writeFile(
+    sidecarPath,
+    `${JSON.stringify(normalizedTags, null, 2)}\n`,
+    "utf8",
+  );
+  return normalizedTags;
+};
+
+const syncVideoTagsInDatabase = (
+  db: Database.Database,
+  videoId: string,
+  tags: string[],
+) => {
+  db.prepare("DELETE FROM video_tags WHERE video_id = ?").run(videoId);
+
+  if (tags.length === 0) {
+    return;
+  }
+
+  const insertTag = db.prepare(
+    "INSERT INTO video_tags (video_id, tag_name) VALUES (?, ?)",
+  );
+  for (const tag of tags) {
+    insertTag.run(videoId, tag);
+  }
+};
+
+const collectTagsByVideoId = (
+  db: Database.Database,
+  videoIds: string[],
+) => {
+  const tagsByVideoId = new Map<string, string[]>();
+  if (videoIds.length === 0) {
+    return tagsByVideoId;
+  }
+
+  const placeholders = videoIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `
+        SELECT video_id, tag_name
+        FROM video_tags
+        WHERE video_id IN (${placeholders})
+        ORDER BY video_id ASC, tag_name ASC
+      `,
+    )
+    .all(...videoIds) as Array<{ video_id: string; tag_name: string }>;
+
+  for (const videoId of videoIds) {
+    tagsByVideoId.set(videoId, []);
+  }
+
+  for (const row of rows) {
+    tagsByVideoId.get(row.video_id)?.push(row.tag_name);
+  }
+
+  return tagsByVideoId;
+};
+
+const getVideoTagsById = (db: Database.Database, videoId: string) => {
+  const tagsByVideoId = collectTagsByVideoId(db, [videoId]);
+  return tagsByVideoId.get(videoId) ?? [];
+};
+
+const hasErrorCode = (
+  value: unknown,
+): value is { code: string | number } => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    (value as { code?: unknown }).code !== undefined
+  );
 };
 
 const parsePositiveInt = (value: string | undefined, fallback: number) => {
@@ -508,17 +675,27 @@ const rescanIntoDatabase = async (
     relative_path: string;
   }>;
   const existingPaths = new Set(
-    existingRows.map((row) => `${row.source_root}:${row.relative_path}`),
+    existingRows.map((row) => makeVideoLookupKey(row.source_root, row.relative_path)),
   );
 
-  // Probe metadata for all discovered videos first, before transaction
   const metadataByPath = new Map<string, VideoMetadata | null>();
-  for (const item of discovered) {
-    const metadata = await probeVideoMetadata(
-      runMediaCommand,
-      join(item.sourceRoot, item.relativePath),
+  const tagsByPath = new Map<string, string[]>();
+  for (let index = 0; index < discovered.length; index += RESCAN_CONCURRENCY) {
+    const batch = discovered.slice(index, index + RESCAN_CONCURRENCY);
+    const batchDetails = await Promise.all(
+      batch.map(async (item) => {
+        const details = await loadDiscoveryDetails(runMediaCommand, item);
+        return {
+          ...details,
+          item,
+        };
+      }),
     );
-    metadataByPath.set(`${item.sourceRoot}:${item.relativePath}`, metadata);
+
+    for (const details of batchDetails) {
+      metadataByPath.set(details.identity, details.metadata);
+      tagsByPath.set(details.identity, details.tags);
+    }
   }
 
   let inserted = 0;
@@ -574,7 +751,7 @@ const rescanIntoDatabase = async (
 
   const transaction = db.transaction(() => {
     for (const item of discovered) {
-      const identity = `${item.sourceRoot}:${item.relativePath}`;
+      const identity = makeVideoLookupKey(item.sourceRoot, item.relativePath);
       const isExisting = existingPaths.has(identity);
       const metadata = metadataByPath.get(identity) ?? null;
       const payload = {
@@ -595,6 +772,7 @@ const rescanIntoDatabase = async (
       };
 
       upsertStatement.run(payload);
+      syncVideoTagsInDatabase(db, item.id, tagsByPath.get(identity) ?? []);
 
       if (isExisting) {
         updated += 1;
@@ -704,12 +882,16 @@ export const buildServer = (options: BuildServerOptions = {}) => {
         `,
       )
       .all({ ...bindings, limit: pageSize, offset }) as VideoRow[];
+    const tagsByVideoId = collectTagsByVideoId(
+      db,
+      rows.map((row) => row.id),
+    );
 
     return {
       page,
       pageSize,
       total: totalRow.total,
-      items: rows.map(rowToVideo),
+      items: rows.map((row) => rowToVideo(row, tagsByVideoId.get(row.id) ?? [])),
     };
   });
 
@@ -729,7 +911,79 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       return reply.code(404).send({ error: "Video not found" });
     }
 
-    return rowToVideo(row);
+    return rowToVideo(row, getVideoTagsById(db, row.id));
+  });
+
+  app.get("/api/videos/:id/tags", async (request, reply) => {
+    const params = request.params as { id: string };
+    const videoExists = db
+      .prepare("SELECT id FROM videos WHERE id = ?")
+      .get(params.id) as { id: string } | undefined;
+
+    if (!videoExists) {
+      return reply.code(404).send({ error: "Video not found" });
+    }
+
+    return {
+      videoId: params.id,
+      tags: getVideoTagsById(db, params.id),
+    };
+  });
+
+  app.put("/api/videos/:id/tags", async (request, reply) => {
+    const params = request.params as { id: string };
+    const body = request.body as { tags?: unknown };
+
+    if (!Array.isArray(body?.tags) || body.tags.some((value) => typeof value !== "string")) {
+      return reply.code(400).send({ error: "tags must be an array of strings" });
+    }
+
+    const videoRow = db
+      .prepare("SELECT id, source_root, relative_path FROM videos WHERE id = ?")
+      .get(params.id) as
+      | { id: string; source_root: string; relative_path: string }
+      | undefined;
+
+    if (!videoRow) {
+      return reply.code(404).send({ error: "Video not found" });
+    }
+
+    const normalizedTags = normalizeTags(body.tags);
+    const previousTags = getVideoTagsById(db, videoRow.id);
+
+    try {
+      db.transaction(() => {
+        syncVideoTagsInDatabase(db, videoRow.id, normalizedTags);
+      })();
+      await writeVideoTagsToSidecar(
+        videoRow.source_root,
+        videoRow.relative_path,
+        normalizedTags,
+      );
+    } catch (error) {
+      console.error(
+        `[Tags] Failed to persist tags for ${join(videoRow.source_root, videoRow.relative_path)}`,
+        error,
+      );
+
+      try {
+        db.transaction(() => {
+          syncVideoTagsInDatabase(db, videoRow.id, previousTags);
+        })();
+      } catch (restoreError) {
+        console.error(
+          `[Tags] Failed to restore previous tags for ${join(videoRow.source_root, videoRow.relative_path)}`,
+          restoreError,
+        );
+      }
+
+      return reply.code(500).send({ error: "Failed to update tags" });
+    }
+
+    return reply.code(200).send({
+      videoId: videoRow.id,
+      tags: normalizedTags,
+    });
   });
 
   app.post("/api/index/rescan", async (_request, reply) => {
@@ -776,17 +1030,36 @@ export const buildServer = (options: BuildServerOptions = {}) => {
     }));
     const configuredRootSet = new Set(videoRootDirs);
 
-    // Keep any legacy or previously indexed roots visible for diagnostics.
     const indexedOnlyItems: RootVideoCount[] = rows
       .filter((row) => !configuredRootSet.has(row.source_root))
       .map((row) => ({
         root: row.source_root,
         videoCount: row.video_count,
-      }))
-      .sort((a, b) => a.root.localeCompare(b.root));
+      }));
 
     return {
-      items: [...configuredItems, ...indexedOnlyItems],
+      items: [...configuredItems, ...indexedOnlyItems]
+        .sort((a, b) => a.root.localeCompare(b.root)),
+    };
+  });
+
+  app.get("/api/index/tags", async () => {
+    const rows = db
+      .prepare(
+        `
+          SELECT tag_name, COUNT(DISTINCT video_id) as video_count
+          FROM video_tags
+          GROUP BY tag_name
+          ORDER BY tag_name ASC
+        `,
+      )
+      .all() as Array<{ tag_name: string; video_count: number }>;
+
+    return {
+      items: rows.map((row) => ({
+        tag: row.tag_name,
+        videoCount: row.video_count,
+      })),
     };
   });
 
