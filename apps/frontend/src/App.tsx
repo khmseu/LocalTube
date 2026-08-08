@@ -122,7 +122,7 @@ const getRouteFromLocation = (): AppRoute => {
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0),
       ),
-    ).toSorted((a, b) => a.localeCompare(b)),
+    ).sort((left, right) => left.localeCompare(right)),
     sort,
   };
 };
@@ -145,19 +145,25 @@ const toBrowsePath = (
   return `/?${params.toString()}`;
 };
 
+const sortStringsAlphabetically = (values: string[]) => {
+  return [...values].sort((left, right) => left.localeCompare(right));
+};
+
 const normalizeVideoTags = (tags: unknown): string[] => {
   if (!Array.isArray(tags)) {
     return [];
   }
 
-  return Array.from(
-    new Set(
-      tags
-        .filter((tag): tag is string => typeof tag === "string")
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0),
+  return sortStringsAlphabetically(
+    Array.from(
+      new Set(
+        tags
+          .filter((tag): tag is string => typeof tag === "string")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0),
+      ),
     ),
-  ).toSorted((a, b) => a.localeCompare(b));
+  );
 };
 
 const withNormalizedVideoTags = <T extends { tags?: unknown }>(
@@ -1019,9 +1025,7 @@ const App = () => {
     const nextTagFilters = route.tagFilters.includes(tag)
       ? route.tagFilters.filter((existingTag) => existingTag !== tag)
       : [...route.tagFilters, tag];
-    const sortedTagFilters = nextTagFilters.toSorted((a, b) =>
-      a.localeCompare(b),
-    );
+    const sortedTagFilters = sortStringsAlphabetically(nextTagFilters);
     navigate(
       toBrowsePath(
         1,
@@ -1044,7 +1048,8 @@ const App = () => {
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0),
       ),
-    ).toSorted((a, b) => a.localeCompare(b));
+    );
+    const sortedNormalizedTags = sortStringsAlphabetically(normalizedTags);
 
     setIsSavingTags(true);
     setTagEditorError(null);
@@ -1054,7 +1059,7 @@ const App = () => {
       const response = await fetch(`/api/videos/${watchVideo.id}/tags`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tags: normalizedTags }),
+        body: JSON.stringify({ tags: sortedNormalizedTags }),
       });
 
       if (!response.ok) {
