@@ -678,6 +678,48 @@ describe("phase 2 indexing and catalog APIs", () => {
       runtime.json().items.map((item: { title: string }) => item.title),
     ).toEqual(["Longest", "Alpha Tie", "Beta Tie", "Unknown"]);
   });
+
+  it("catalog supports filtering by selected tags", async () => {
+    const rootDir = await createVideoRoot();
+    const sqlitePath = join(rootDir, "catalog.db");
+    await writeVideo(rootDir, "alpha.mp4", "alpha-video");
+    await writeVideo(rootDir, "beta.mp4", "beta-video");
+    await writeFile(
+      join(rootDir, "alpha.mp4.localtube-tags.json"),
+      JSON.stringify(["animals", "cats"]),
+      "utf8",
+    );
+    await writeFile(
+      join(rootDir, "beta.mp4.localtube-tags.json"),
+      JSON.stringify(["animals", "dogs"]),
+      "utf8",
+    );
+
+    const app = buildServer({
+      videoRootDir: rootDir,
+      sqlitePath,
+      runMediaCommand: async () => ({ code: 0, stdout: "", stderr: "" }),
+    });
+
+    const rescanResponse = await app.inject({
+      method: "POST",
+      url: "/api/index/rescan",
+      headers: localOriginHeader,
+      remoteAddress: "127.0.0.1",
+    });
+    expect(rescanResponse.statusCode).toBe(200);
+
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/videos?page=1&pageSize=10&tags=animals,cats",
+      remoteAddress: "127.0.0.1",
+    });
+
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().total).toBe(1);
+    expect(filtered.json().items[0].title).toBe("alpha");
+    expect(filtered.json().items[0].tags).toEqual(["animals", "cats"]);
+  });
 });
 
 describe("phase 3 media APIs", () => {

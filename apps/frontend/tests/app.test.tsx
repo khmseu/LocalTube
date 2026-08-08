@@ -431,7 +431,7 @@ describe("phase 4 frontend integration", () => {
       expect(window.location.search).toContain("q=cats");
     });
 
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/videos?page=1&pageSize=12&q=cats&sort=alphabetical",
       expect.anything(),
     );
@@ -452,7 +452,7 @@ describe("phase 4 frontend integration", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenLastCalledWith(
+      expect(fetchMock).toHaveBeenCalledWith(
         "/api/videos?page=1&pageSize=24&q=&sort=alphabetical",
         expect.anything(),
       );
@@ -521,10 +521,68 @@ describe("phase 4 frontend integration", () => {
       expect(window.location.search).toContain("sort=runtime");
     });
 
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/videos?page=1&pageSize=2&q=&sort=runtime",
       expect.anything(),
     );
+  });
+
+  it("tag filter toggles update browse query", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          items: [
+            {
+              id: "video-1",
+              title: "Tagged Video",
+              path: "tagged.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 60,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              tags: ["cats"],
+            },
+          ],
+        });
+      }
+
+      if (url.endsWith("/api/index/tags")) {
+        return jsonResponse({
+          items: [
+            { tag: "cats", videoCount: 1 },
+            { tag: "dogs", videoCount: 1 },
+          ],
+        });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Tagged Video" });
+    fireEvent.click(screen.getByText("Tags"));
+
+    const catsToggle = await screen.findByRole("checkbox", { name: "cats" });
+    fireEvent.click(catsToggle);
+
+    await waitFor(() => {
+      expect(window.location.search).toContain("tags=cats");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/videos?page=1&pageSize=12&q=&tags=cats&sort=alphabetical",
+        expect.anything(),
+      );
+    });
   });
 
   it("watch page loads stream URL", async () => {

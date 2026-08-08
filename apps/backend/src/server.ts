@@ -853,16 +853,44 @@ export const buildServer = (options: BuildServerOptions = {}) => {
       page?: string;
       pageSize?: string;
       q?: string;
+      tags?: string;
       sort?: string;
     };
     const page = parsePositiveInt(query.page, 1);
     const pageSize = Math.min(parsePositiveInt(query.pageSize, 20), 100);
     const offset = (page - 1) * pageSize;
     const searchTerm = query.q?.trim() ?? "";
+    const selectedTags = normalizeTags((query.tags ?? "").split(","));
     const sortMode = parseCatalogSortMode(query.sort);
 
-    const whereClause = searchTerm.length > 0 ? "WHERE title LIKE @q" : "";
-    const bindings = searchTerm.length > 0 ? { q: `%${searchTerm}%` } : {};
+    const whereConditions: string[] = [];
+    const bindings: Record<string, string | number> = {};
+    if (searchTerm.length > 0) {
+      whereConditions.push("title LIKE @q");
+      bindings.q = `%${searchTerm}%`;
+    }
+
+    if (selectedTags.length > 0) {
+      const tagPlaceholders = selectedTags.map((_, index) => `@tag${index}`);
+      for (const [index, tag] of selectedTags.entries()) {
+        bindings[`tag${index}`] = tag;
+      }
+      bindings.requiredTagCount = selectedTags.length;
+      whereConditions.push(`
+        id IN (
+          SELECT video_id
+          FROM video_tags
+          WHERE tag_name IN (${tagPlaceholders.join(", ")})
+          GROUP BY video_id
+          HAVING COUNT(DISTINCT tag_name) = @requiredTagCount
+        )
+      `);
+    }
+
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
     const orderByClause =
       sortMode === "runtime"
         ? "ORDER BY duration_seconds IS NULL ASC, duration_seconds DESC, title ASC, relative_path ASC"

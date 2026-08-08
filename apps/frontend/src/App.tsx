@@ -41,6 +41,7 @@ type BrowseRoute = {
   page: number;
   pageSize: number;
   q: string;
+  tagFilters: string[];
   sort: CatalogSortMode;
 };
 
@@ -106,6 +107,7 @@ const getRouteFromLocation = (): AppRoute => {
 
   const params = new URLSearchParams(window.location.search);
   const sortParam = params.get("sort");
+  const tagsParam = params.get("tags") ?? "";
   const sort: CatalogSortMode =
     sortParam === "runtime" ? "runtime" : DEFAULT_SORT_MODE;
   return {
@@ -113,6 +115,14 @@ const getRouteFromLocation = (): AppRoute => {
     page: readPositiveNumber(params.get("page"), 1),
     pageSize: readPositiveNumber(params.get("pageSize"), readStoredPageSize()),
     q: params.get("q")?.trim() ?? "",
+    tagFilters: Array.from(
+      new Set(
+        tagsParam
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0),
+      ),
+    ).toSorted((a, b) => a.localeCompare(b)),
     sort,
   };
 };
@@ -121,14 +131,42 @@ const toBrowsePath = (
   page: number,
   pageSize: number,
   q: string,
+  tagFilters: string[],
   sort: CatalogSortMode,
 ): string => {
   const params = new URLSearchParams();
   params.set("page", String(page));
   params.set("pageSize", String(pageSize));
   params.set("q", q);
+  if (tagFilters.length > 0) {
+    params.set("tags", tagFilters.join(","));
+  }
   params.set("sort", sort);
   return `/?${params.toString()}`;
+};
+
+const normalizeVideoTags = (tags: unknown): string[] => {
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      tags
+        .filter((tag): tag is string => typeof tag === "string")
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0),
+    ),
+  ).toSorted((a, b) => a.localeCompare(b));
+};
+
+const withNormalizedVideoTags = <T extends { tags?: unknown }>(
+  video: T,
+): T & { tags: string[] } => {
+  return {
+    ...video,
+    tags: normalizeVideoTags(video.tags),
+  };
 };
 
 const formatDuration = (seconds: number | null): string => {
@@ -255,7 +293,11 @@ const App = () => {
 
     setBrowseError(null);
     const controller = new AbortController();
-    const url = `/api/videos?page=${route.page}&pageSize=${route.pageSize}&q=${encodeURIComponent(route.q)}&sort=${route.sort}`;
+    const tagFilterQuery =
+      route.tagFilters.length > 0
+        ? `&tags=${encodeURIComponent(route.tagFilters.join(","))}`
+        : "";
+    const url = `/api/videos?page=${route.page}&pageSize=${route.pageSize}&q=${encodeURIComponent(route.q)}${tagFilterQuery}&sort=${route.sort}`;
 
     fetch(url, { method: "GET", signal: controller.signal })
       .then(async (response) => {
@@ -263,7 +305,10 @@ const App = () => {
           throw new Error("Unable to load videos");
         }
         const data = (await response.json()) as VideoListResponse;
-        setBrowse(data);
+        setBrowse({
+          ...data,
+          items: data.items.map((item) => withNormalizedVideoTags(item)),
+        });
       })
       .catch((error: unknown) => {
         if (isAbortError(error)) {
@@ -299,7 +344,9 @@ const App = () => {
         throw new Error("Unable to load resume");
       }
 
-      const video = (await videoResponse.json()) as VideoItem;
+      const video = withNormalizedVideoTags(
+        (await videoResponse.json()) as VideoItem,
+      );
       const resume = (await resumeResponse.json()) as ResumeResponse;
 
       setWatchVideo(video);
@@ -348,7 +395,8 @@ const App = () => {
     const pageSize =
       route.kind === "browse" ? route.pageSize : readStoredPageSize();
     const sort = route.kind === "browse" ? route.sort : DEFAULT_SORT_MODE;
-    navigate(toBrowsePath(1, pageSize, searchInput.trim(), sort));
+    const tagFilters = route.kind === "browse" ? route.tagFilters : [];
+    navigate(toBrowsePath(1, pageSize, searchInput.trim(), tagFilters, sort));
   };
 
   const getRootSummaryContent = (): ReactNode => {
@@ -448,6 +496,38 @@ const App = () => {
     );
   };
 
+  const renderTagFilters = (browseRoute: BrowseRoute) => {
+    return (
+      <details className="tag-filter-panel">
+        <summary>
+          Tags
+          {browseRoute.tagFilters.length > 0
+            ? ` (${browseRoute.tagFilters.length} selected)`
+            : ""}
+        </summary>
+        {tagCounts.length === 0 ? (
+          <p className="tag-filter-empty">No tags available</p>
+        ) : (
+          <div className="tag-filter-list">
+            {tagCounts.map((item) => {
+              const selected = browseRoute.tagFilters.includes(item.tag);
+              return (
+                <label key={item.tag} className="tag-filter-option">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => toggleTagFilter(item.tag)}
+                  />
+                  <span>{item.tag}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </details>
+    );
+  };
+
   const renderBrowseCards = (browseResponse: VideoListResponse) => {
     return (
       <ul className="video-grid">
@@ -495,7 +575,12 @@ const App = () => {
                 <h2 className="video-title" title={video.title}>
                   {video.title}
                 </h2>
-                <p>{formatDuration(video.durationSeconds)}</p>
+                <p className="video-description">
+                  {formatDuration(video.durationSeconds)}
+                </p>
+                <p className="video-description">
+                  Tags: {video.tags.length > 0 ? video.tags.join(", ") : "none"}
+                </p>
               </div>
             </button>
           </li>
@@ -518,6 +603,7 @@ const App = () => {
                 Math.max(1, browseRoute.page - 1),
                 browseRoute.pageSize,
                 browseRoute.q,
+                browseRoute.tagFilters,
                 browseRoute.sort,
               ),
             )
@@ -555,6 +641,7 @@ const App = () => {
                       item,
                       browseRoute.pageSize,
                       browseRoute.q,
+                      browseRoute.tagFilters,
                       browseRoute.sort,
                     ),
                 )
@@ -576,6 +663,7 @@ const App = () => {
                 Math.min(totalPages, browseRoute.page + 1),
                 browseRoute.pageSize,
                 browseRoute.q,
+                browseRoute.tagFilters,
                 browseRoute.sort,
               ),
             )
@@ -600,6 +688,7 @@ const App = () => {
         {browse ? (
           <>
             {renderBrowseControls(route)}
+            {renderTagFilters(route)}
             {renderBrowseCards(browse)}
             {renderBrowsePagination(route)}
           </>
@@ -617,7 +706,7 @@ const App = () => {
           type="button"
           className="back-link"
           onClick={() =>
-            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", [], DEFAULT_SORT_MODE))
           }
         >
           Back to Browse
@@ -628,6 +717,9 @@ const App = () => {
         ) : (
           <>
             <h1>{watchVideo.title}</h1>
+            <p className="video-description">
+              Tags: {watchVideo.tags.length > 0 ? watchVideo.tags.join(", ") : "none"}
+            </p>
             <video
               ref={videoRef}
               controls
@@ -839,6 +931,19 @@ const App = () => {
   }, [route.kind, loadRootCounts, loadTagCounts]);
 
   useEffect(() => {
+    if (route.kind !== "browse") {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadTagCounts(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [route.kind, loadTagCounts]);
+
+  useEffect(() => {
     if (route.kind !== "watch") {
       return;
     }
@@ -882,7 +987,7 @@ const App = () => {
       return;
     }
 
-    navigate(toBrowsePath(1, route.pageSize, route.q, nextSort));
+    navigate(toBrowsePath(1, route.pageSize, route.q, route.tagFilters, nextSort));
   };
 
   const changePageSize = (nextPageSize: number) => {
@@ -895,7 +1000,37 @@ const App = () => {
       route.pageSize,
     );
     writeStoredPageSize(sanitizedPageSize);
-    navigate(toBrowsePath(1, sanitizedPageSize, route.q, route.sort));
+    navigate(
+      toBrowsePath(
+        1,
+        sanitizedPageSize,
+        route.q,
+        route.tagFilters,
+        route.sort,
+      ),
+    );
+  };
+
+  const toggleTagFilter = (tag: string) => {
+    if (route.kind !== "browse") {
+      return;
+    }
+
+    const nextTagFilters = route.tagFilters.includes(tag)
+      ? route.tagFilters.filter((existingTag) => existingTag !== tag)
+      : [...route.tagFilters, tag];
+    const sortedTagFilters = nextTagFilters.toSorted((a, b) =>
+      a.localeCompare(b),
+    );
+    navigate(
+      toBrowsePath(
+        1,
+        route.pageSize,
+        route.q,
+        sortedTagFilters,
+        route.sort,
+      ),
+    );
   };
 
   const saveWatchTags = async (nextTags: string[]) => {
@@ -909,7 +1044,7 @@ const App = () => {
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0),
       ),
-    ).sort((a, b) => a.localeCompare(b));
+    ).toSorted((a, b) => a.localeCompare(b));
 
     setIsSavingTags(true);
     setTagEditorError(null);
@@ -933,7 +1068,7 @@ const App = () => {
 
       setWatchVideo((current) =>
         current?.id === payload.videoId
-          ? { ...current, tags: payload.tags }
+          ? { ...current, tags: normalizeVideoTags(payload.tags) }
           : current,
       );
       setTagDraft("");
@@ -1014,7 +1149,7 @@ const App = () => {
           className="brand"
           type="button"
           onClick={() =>
-            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", DEFAULT_SORT_MODE))
+            navigate(toBrowsePath(1, DEFAULT_PAGE_SIZE, "", [], DEFAULT_SORT_MODE))
           }
         >
           LocalTube
@@ -1033,7 +1168,7 @@ const App = () => {
             type="search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search local videos"
+            placeholder="Search video names"
             aria-label="Search videos"
           />
           <button type="submit">Search</button>
