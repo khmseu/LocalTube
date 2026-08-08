@@ -245,6 +245,7 @@ const App = () => {
   const [isLoadingTagCounts, setIsLoadingTagCounts] = useState(false);
   const [tagCountsError, setTagCountsError] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
+  const [selectedKnownTag, setSelectedKnownTag] = useState("");
   const [tagEditorStatus, setTagEditorStatus] = useState<string | null>(null);
   const [tagEditorError, setTagEditorError] = useState<string | null>(null);
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -357,6 +358,7 @@ const App = () => {
 
       setWatchVideo(video);
       setTagDraft("");
+      setSelectedKnownTag("");
       setResumePosition(resume.positionSeconds);
       lastSyncedSecondsRef.current = resume.positionSeconds;
     };
@@ -585,7 +587,7 @@ const App = () => {
                   {formatDuration(video.durationSeconds)}
                 </p>
                 <p className="video-description">
-                  Tags: {video.tags.length > 0 ? video.tags.join(", ") : "none"}
+                  Tags: {video.tags.length > 0 ? video.tags.join(", ") : ""}
                 </p>
               </div>
             </button>
@@ -705,6 +707,10 @@ const App = () => {
 
   const renderWatchContent = (watchRoute: WatchRoute): ReactNode => {
     const knownTags = tagCounts.map((item) => item.tag);
+    const availableKnownTags =
+      watchVideo === null
+        ? knownTags
+        : knownTags.filter((tag) => !watchVideo.tags.includes(tag));
 
     return (
       <section className="watch-layout" aria-label="Watch video">
@@ -736,9 +742,8 @@ const App = () => {
               <track kind="captions" srcLang="en" label="English" />
             </video>
             <section className="tag-editor" aria-label="Video tags">
-              <h2>Tags</h2>
+              <h2>{tagEditorStatus ?? "Tags"}</h2>
               {tagEditorError ? <p role="alert">{tagEditorError}</p> : null}
-              {tagEditorStatus ? <p aria-live="polite">{tagEditorStatus}</p> : null}
               <div className="tag-chip-list">
                 {watchVideo.tags.length === 0 ? (
                   <p>No tags assigned.</p>
@@ -764,6 +769,31 @@ const App = () => {
                   ))
                 )}
               </div>
+              <div className="tag-editor-form">
+                <label htmlFor="known-video-tag-select" className="sr-only">
+                  Add existing tag
+                </label>
+                <select
+                  id="known-video-tag-select"
+                  value={selectedKnownTag}
+                  onChange={(event) => {
+                    const nextTag = event.target.value;
+                    setSelectedKnownTag(nextTag);
+                    if (nextTag.length === 0) {
+                      return;
+                    }
+                    void saveWatchTags([...watchVideo.tags, nextTag]);
+                  }}
+                  disabled={isSavingTags || availableKnownTags.length === 0}
+                >
+                  <option value="">Add existing tag</option>
+                  {availableKnownTags.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <form
                 className="tag-editor-form"
                 onSubmit={(event) => {
@@ -779,16 +809,10 @@ const App = () => {
                 </label>
                 <input
                   id="video-tag-input"
-                  list="known-video-tags"
                   value={tagDraft}
                   onChange={(event) => setTagDraft(event.target.value)}
-                  placeholder="Add a tag"
+                  placeholder="Add a new tag"
                 />
-                <datalist id="known-video-tags">
-                  {knownTags.map((tag) => (
-                    <option key={tag} value={tag} />
-                  ))}
-                </datalist>
                 <button type="submit" disabled={isSavingTags}>
                   Add tag
                 </button>
@@ -1077,6 +1101,7 @@ const App = () => {
           : current,
       );
       setTagDraft("");
+      setSelectedKnownTag("");
       setTagEditorStatus("Tags saved.");
       await loadTagCounts();
     } catch {

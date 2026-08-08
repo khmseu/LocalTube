@@ -585,6 +585,129 @@ describe("phase 4 frontend integration", () => {
     });
   });
 
+  it("browse cards leave empty tags blank instead of showing none", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/videos?")) {
+        return jsonResponse({
+          page: 1,
+          pageSize: 12,
+          total: 1,
+          items: [
+            {
+              id: "video-empty-tags",
+              title: "No Tag Video",
+              path: "no-tag.mp4",
+              sizeBytes: 100,
+              mtimeMs: 1,
+              durationSeconds: 60,
+              width: null,
+              height: null,
+              codecName: null,
+              formatName: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              tags: [],
+            },
+          ],
+        });
+      }
+
+      if (url.endsWith("/api/index/tags")) {
+        return jsonResponse({ items: [] });
+      }
+
+      return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "No Tag Video" });
+    expect(
+      screen.getByText((content) => content === "Tags:"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Tags: none")).toBeNull();
+  });
+
+  it("watch page adds an existing tag immediately from the selector", async () => {
+    window.history.pushState({}, "", "/watch/video-tagged");
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url.endsWith("/api/videos/video-tagged") &&
+          (!init || init.method === undefined)
+        ) {
+          return jsonResponse({
+            id: "video-tagged",
+            title: "Tagged Watch",
+            path: "tagged-watch.mp4",
+            sizeBytes: 123,
+            mtimeMs: 100,
+            durationSeconds: 120,
+            width: 1920,
+            height: 1080,
+            codecName: "h264",
+            formatName: "mp4",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            tags: ["alpha"],
+          });
+        }
+        if (
+          url.endsWith("/api/videos/video-tagged/resume") &&
+          (!init || init.method === undefined)
+        ) {
+          return jsonResponse({
+            videoId: "video-tagged",
+            positionSeconds: 0,
+            updatedAt: null,
+          });
+        }
+        if (url.endsWith("/api/index/tags") && (!init || init.method === "GET")) {
+          return jsonResponse({
+            items: [
+              { tag: "alpha", videoCount: 1 },
+              { tag: "beta", videoCount: 1 },
+            ],
+          });
+        }
+        if (
+          url.endsWith("/api/videos/video-tagged/tags") &&
+          init?.method === "PUT"
+        ) {
+          return jsonResponse({
+            videoId: "video-tagged",
+            tags: ["alpha", "beta"],
+          });
+        }
+
+        return jsonResponse({ error: "Unexpected request" }, { status: 404 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Tagged Watch" });
+    fireEvent.change(screen.getByLabelText("Add existing tag"), {
+      target: { value: "beta" },
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/videos/video-tagged/tags",
+        expect.objectContaining({
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tags: ["alpha", "beta"] }),
+        }),
+      );
+      expect(screen.getByRole("heading", { name: "Tags saved." })).toBeInTheDocument();
+    });
+  });
+
   it("watch page loads stream URL", async () => {
     window.history.pushState({}, "", "/watch/video-1");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

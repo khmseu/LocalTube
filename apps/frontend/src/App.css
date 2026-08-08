@@ -364,6 +364,16 @@ main {
   font-size: 0.98rem;
 }
 
+.tag-editor-form select {
+  min-width: 14rem;
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.98rem;
+  background: #fff;
+}
+
 .tag-editor-form button {
   border: 0;
   border-radius: 999px;
