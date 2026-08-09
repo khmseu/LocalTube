@@ -729,9 +729,6 @@ const App = () => {
         ) : (
           <>
             <h1>{watchVideo.title}</h1>
-            <p className="video-description">
-              Tags: {watchVideo.tags.length > 0 ? watchVideo.tags.join(", ") : "none"}
-            </p>
             <video
               ref={videoRef}
               controls
@@ -769,54 +766,56 @@ const App = () => {
                   ))
                 )}
               </div>
-              <div className="tag-editor-form">
-                <label htmlFor="known-video-tag-select" className="sr-only">
-                  Add existing tag
-                </label>
-                <select
-                  id="known-video-tag-select"
-                  value={selectedKnownTag}
-                  onChange={(event) => {
-                    const nextTag = event.target.value;
-                    setSelectedKnownTag(nextTag);
-                    if (nextTag.length === 0) {
+              <div className="tag-editor-forms">
+                <div className="tag-editor-form">
+                  <label htmlFor="known-video-tag-select" className="sr-only">
+                    Add existing tag
+                  </label>
+                  <select
+                    id="known-video-tag-select"
+                    value={selectedKnownTag}
+                    onChange={(event) => {
+                      const nextTag = event.target.value;
+                      setSelectedKnownTag(nextTag);
+                      if (nextTag.length === 0) {
+                        return;
+                      }
+                      void saveWatchTags([...watchVideo.tags, nextTag]);
+                    }}
+                    disabled={isSavingTags || availableKnownTags.length === 0}
+                  >
+                    <option value="">Add existing tag</option>
+                    {availableKnownTags.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <form
+                  className="tag-editor-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (tagDraft.trim().length === 0) {
                       return;
                     }
-                    void saveWatchTags([...watchVideo.tags, nextTag]);
+                    void saveWatchTags([...watchVideo.tags, tagDraft]);
                   }}
-                  disabled={isSavingTags || availableKnownTags.length === 0}
                 >
-                  <option value="">Add existing tag</option>
-                  {availableKnownTags.map((tag) => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  <label htmlFor="video-tag-input" className="sr-only">
+                    Add tag
+                  </label>
+                  <input
+                    id="video-tag-input"
+                    value={tagDraft}
+                    onChange={(event) => setTagDraft(event.target.value)}
+                    placeholder="Add a new tag"
+                  />
+                  <button type="submit" disabled={isSavingTags}>
+                    Add tag
+                  </button>
+                </form>
               </div>
-              <form
-                className="tag-editor-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (tagDraft.trim().length === 0) {
-                    return;
-                  }
-                  void saveWatchTags([...watchVideo.tags, tagDraft]);
-                }}
-              >
-                <label htmlFor="video-tag-input" className="sr-only">
-                  Add tag
-                </label>
-                <input
-                  id="video-tag-input"
-                  value={tagDraft}
-                  onChange={(event) => setTagDraft(event.target.value)}
-                  placeholder="Add a new tag"
-                />
-                <button type="submit" disabled={isSavingTags}>
-                  Add tag
-                </button>
-              </form>
             </section>
           </>
         )}
@@ -1173,7 +1172,7 @@ const App = () => {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${route.kind === "watch" ? " app-shell--watch" : ""}`}>
       <header className="top-bar">
         <button
           className="brand"
