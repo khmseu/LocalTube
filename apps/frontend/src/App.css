@@ -1,34 +1,41 @@
 :root {
-  --bg: #f6f6f2;
-  --panel: #ffffff;
-  --panel-top-bar: rgba(255, 255, 255, 0.92);
-  --panel-translucent: rgba(255, 255, 255, 0.82);
-  --ink: #1f2124;
-  --muted: #5f615f;
-  --accent: #d4411f;
-  --accent-2: #f2b138;
-  --border: #d8d4cb;
-  --table-header-bg: #ece7da;
-  --media-bg: #ece8dd;
-  --black: #000000;
-  --bg-warm-1: #fff4d9;
-  --bg-warm-2: #ffd8c6;
-  --shadow-card: rgba(26, 23, 17, 0.06);
+  /* === primitives (6 values define the whole theme) === */
+  --c-accent:   #d4411f;
+  --c-accent-2: #f2b138;
+  --c-bg:       #f6f6f2;
+  --c-surface:  #ffffff;
+  --c-ink:      #1f2124;
+  --c-black:    #000000;
+
+  /* === derived — change only the primitives above to retheme === */
+  --accent:            var(--c-accent);
+  --accent-2:          var(--c-accent-2);
+  --black:             var(--c-black);
+
+  --bg:                var(--c-bg);
+  --bg-warm-1:         color-mix(in oklch, var(--c-surface) 80%, var(--c-accent-2));
+  --bg-warm-2:         color-mix(in oklch, var(--c-surface) 75%, var(--c-accent));
+
+  --panel:             var(--c-surface);
+  --panel-top-bar:     color-mix(in srgb, var(--c-surface) 92%, transparent);
+  --panel-translucent: color-mix(in srgb, var(--c-surface) 82%, transparent);
+
+  --ink:               var(--c-ink);
+  --muted:             color-mix(in oklch, var(--c-ink) 65%, var(--c-surface));
+
+  --border:            color-mix(in oklch, var(--c-surface) 82%, var(--c-ink));
+  --table-header-bg:   color-mix(in oklch, var(--c-surface) 91%, var(--c-ink));
+  --media-bg:          color-mix(in oklch, var(--c-surface) 89%, var(--c-ink));
+
+  --shadow-card:       color-mix(in srgb, transparent 94%, var(--c-black));
 }
 
 :root.dark {
-  --bg: #1a1b1e;
-  --panel: #25272a;
-  --panel-top-bar: rgba(28, 29, 32, 0.95);
-  --panel-translucent: rgba(37, 39, 42, 0.95);
-  --ink: #e8e5df;
-  --muted: #9a9b97;
-  --border: #3c3e42;
-  --table-header-bg: #2e3033;
-  --media-bg: #2a2c2f;
-  --bg-warm-1: rgba(255, 180, 60, 0.05);
-  --bg-warm-2: rgba(212, 65, 31, 0.04);
-  --shadow-card: rgba(0, 0, 0, 0.35);
+  --c-bg:       #1a1b1e;
+  --c-surface:  #25272a;
+  --c-ink:      #e8e5df;
+  /* shadows need to stay dark regardless of ink lightness */
+  --shadow-card: color-mix(in srgb, transparent 65%, var(--c-black));
 }
 
 * {
