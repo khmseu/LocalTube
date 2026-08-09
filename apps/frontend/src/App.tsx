@@ -1016,7 +1016,7 @@ const App = () => {
       return;
     }
 
-    navigate(toBrowsePath(1, route.pageSize, route.q, route.tagFilters, nextSort));
+    navigate(toBrowsePath(1, route.pageSize, searchInput.trim(), route.tagFilters, nextSort));
   };
 
   const changePageSize = (nextPageSize: number) => {
@@ -1033,7 +1033,7 @@ const App = () => {
       toBrowsePath(
         1,
         sanitizedPageSize,
-        route.q,
+        searchInput.trim(),
         route.tagFilters,
         route.sort,
       ),
@@ -1053,7 +1053,7 @@ const App = () => {
       toBrowsePath(
         1,
         route.pageSize,
-        route.q,
+        searchInput.trim(),
         sortedTagFilters,
         route.sort,
       ),
