@@ -16,6 +16,21 @@
   --shadow-card: rgba(26, 23, 17, 0.06);
 }
 
+:root.dark {
+  --bg: #1a1b1e;
+  --panel: #25272a;
+  --panel-top-bar: rgba(28, 29, 32, 0.95);
+  --panel-translucent: rgba(37, 39, 42, 0.95);
+  --ink: #e8e5df;
+  --muted: #9a9b97;
+  --border: #3c3e42;
+  --table-header-bg: #2e3033;
+  --media-bg: #2a2c2f;
+  --bg-warm-1: rgba(255, 180, 60, 0.05);
+  --bg-warm-2: rgba(212, 65, 31, 0.04);
+  --shadow-card: rgba(0, 0, 0, 0.35);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -503,6 +518,18 @@ main {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+.dark-mode-toggle {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 @media (max-width: 700px) {

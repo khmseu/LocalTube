@@ -61,6 +61,7 @@ type CatalogSortMode = "alphabetical" | "runtime";
 const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SORT_MODE: CatalogSortMode = "alphabetical";
 const PAGE_SIZE_STORAGE_KEY = "localtube:browse-page-size";
+const DARK_MODE_STORAGE_KEY = "localtube:dark-mode";
 
 const readPositiveNumber = (value: string | null, fallback: number): number => {
   if (!value) {
@@ -90,6 +91,17 @@ const writeStoredPageSize = (value: number) => {
   } catch {
     // Ignore storage failures and keep the current browse state working.
   }
+};
+
+const readStoredDarkMode = (): boolean => {
+  try {
+    const stored = window.localStorage.getItem(DARK_MODE_STORAGE_KEY);
+    if (stored === "true") return true;
+    if (stored === "false") return false;
+  } catch {
+    // ignore
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 };
 
 const getRouteFromLocation = (): AppRoute => {
@@ -238,6 +250,7 @@ const App = () => {
   const [resumePosition, setResumePosition] = useState<number>(0);
   const [rescanStatus, setRescanStatus] = useState<string | null>(null);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [isDark, setIsDark] = useState(readStoredDarkMode);
   const [rootCounts, setRootCounts] = useState<RootVideoCount[]>([]);
   const [isLoadingRootCounts, setIsLoadingRootCounts] = useState(false);
   const [rootCountsError, setRootCountsError] = useState<string | null>(null);
@@ -276,6 +289,15 @@ const App = () => {
     setPreviewVideoId(null);
     setPreviewReadyIds(new Set());
   }, [route]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDark);
+    try {
+      window.localStorage.setItem(DARK_MODE_STORAGE_KEY, String(isDark));
+    } catch {
+      // ignore
+    }
+  }, [isDark]);
 
   useEffect(() => {
     for (const [videoId, element] of previewVideoRefs.current) {
@@ -1208,6 +1230,14 @@ const App = () => {
           onClick={() => navigate("/admin")}
         >
           Admin
+        </button>
+        <button
+          type="button"
+          className="dark-mode-toggle"
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          onClick={() => setIsDark((prev) => !prev)}
+        >
+          {isDark ? "☀" : "🌙"}
         </button>
       </header>
 
